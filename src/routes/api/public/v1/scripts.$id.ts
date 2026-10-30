@@ -27,7 +27,7 @@ export const Route = createFileRoute("/api/public/v1/scripts/$id")({
         if (!Id.safeParse(params.id).success) return json({ error: "Not found" }, 404);
         const p = Patch.safeParse(await request.json().catch(() => null));
         if (!p.success) return json({ error: p.error.issues[0]?.message ?? "Invalid body" }, 400);
-        const { data } = await a.db.from("scripts").update(JSON.parse(JSON.stringify(p.data)) as Record<string, string | boolean>).eq("id", params.id).eq("owner_id", a.ownerId).select(SCRIPT_COLS).maybeSingle();
+        const { data } = await a.db.from("scripts").update(JSON.parse(JSON.stringify(p.data)) as { name?: string; source?: string; enabled?: boolean; keyless?: boolean }).eq("id", params.id).eq("owner_id", a.ownerId).select(SCRIPT_COLS).maybeSingle();
         return data ? json({ script: data }) : json({ error: "Not found" }, 404);
       },
       DELETE: async ({ request, params }) => {

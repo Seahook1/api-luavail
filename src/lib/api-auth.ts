@@ -16,7 +16,7 @@ export async function authApiRequest(request: Request) {
   const m = /^Bearer\s+(vk_[0-9a-f]{48})$/.exec(request.headers.get("authorization") ?? "");
   if (!m) return null;
   const { supabaseAdmin: db } = await import("@/integrations/supabase/client.server");
-  const { data } = await db.from("api_keys").select("id,owner_id").eq("key_hash", await hashApiKey(m[1])).maybeSingle();
+  const { data } = await db.from("api_keys").select("id,owner_id").eq("key_hash", await hashApiKey(m[1]!)).maybeSingle();
   if (!data) return null;
   await db.from("api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", data.id);
   return { db, ownerId: data.owner_id };
