@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { registerDiscordCommands, getBotInvite } from "@/lib/discord.functions";
+import { createApiKey } from "@/lib/apikeys.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -477,14 +478,37 @@ function DiscordPanel() {
     const { error } = await supabase.from("discord_links").insert({ user_id: u.user.id, link_code: code });
     error ? toast.error(error.message) : load();
   };
+  const step = "rounded-md border border-border p-4 space-y-2";
   return (
-    <div className="mt-6 space-y-2 rounded-md border border-border p-3 text-xs">
-      <div className="font-bold text-sm">Discord bot</div>
-      {invite && <a href={invite} target="_blank" rel="noreferrer" className="block text-primary underline">Add bot to your server</a>}
-      <div className="text-muted-foreground">{link?.guild_id ? `Linked to server ${link.guild_id}` : "No server linked"}</div>
-      {link && <div>Run in Discord: <code className="text-primary break-all">/link {link.link_code}</code></div>}
-      <Button size="sm" variant="secondary" className="w-full" onClick={newCode}>{link ? "New link code" : "Get link code"}</Button>
-      <Button size="sm" variant="ghost" className="w-full" onClick={async () => { const r = await register(); r.ok ? toast.success(r.message) : toast.error(r.message); }}>Register commands</Button>
+    <div className="mx-auto max-w-3xl space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Discord bot</h2>
+        <span className={`text-xs ${link?.guild_id ? "text-primary" : "text-muted-foreground"}`}>{link?.guild_id ? `● Linked to server ${link.guild_id}` : "○ No server linked"}</span>
+      </div>
+      <div className={step}>
+        <div className="font-bold">1. Add the bot to your server</div>
+        {invite ? <a href={invite} target="_blank" rel="noreferrer" className="text-sm text-primary underline">Open invite link</a>
+          : <p className="text-sm text-muted-foreground">The bot isn't configured yet (missing Discord bot details).</p>}
+      </div>
+      <div className={step}>
+        <div className="font-bold">2. Register slash commands</div>
+        <Button size="sm" variant="secondary" onClick={async () => { const r = await register(); r.ok ? toast.success(r.message) : toast.error(r.message); }}>Register commands</Button>
+      </div>
+      <div className={step}>
+        <div className="font-bold">3. Link your server</div>
+        {link && <div className="text-sm">Run in Discord: <code className="text-primary break-all">/link {link.link_code}</code></div>}
+        <Button size="sm" onClick={newCode}>{link ? "New link code" : "Get link code"}</Button>
+      </div>
+      <div className={step}>
+        <div className="font-bold">Commands</div>
+        <ul className="text-xs text-muted-foreground space-y-1">
+          <li><code>/redeem key</code> — buyer gets their loader</li>
+          <li><code>/resethwid key</code> — buyer resets device lock</li>
+          <li><code>/genkey script [note] [days]</code> — admin: generate a key</li>
+          <li><code>/ban</code> · <code>/unban</code> · <code>/delkey key</code> — admin key management</li>
+        </ul>
+        <p className="text-xs text-muted-foreground">Run alerts per script are set in each script's "Discord run alerts" section.</p>
+      </div>
     </div>
   );
 }
