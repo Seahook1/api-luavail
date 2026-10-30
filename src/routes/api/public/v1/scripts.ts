@@ -23,7 +23,7 @@ export const Route = createFileRoute("/api/public/v1/scripts")({
         if (!a) return json({ error: "Invalid API key" }, 401);
         const p = Create.safeParse(await request.json().catch(() => null));
         if (!p.success) return json({ error: p.error.issues[0]?.message ?? "Invalid body" }, 400);
-        const { data, error } = await a.db.from("scripts").insert({ ...p.data, owner_id: a.ownerId }).select(SCRIPT_COLS).single();
+        const { data, error } = await a.db.from("scripts").insert({ name: p.data.name, source: p.data.source ?? "", keyless: p.data.keyless ?? false, owner_id: a.ownerId }).select(SCRIPT_COLS).single();
         if (error) return json({ error: error.message }, 500);
         const origin = new URL(request.url).origin;
         return json({ script: data, loader: `loadstring(game:HttpGet("${origin}/api/public/loader/${data.id}"))()` }, 201);
