@@ -12,12 +12,17 @@ import { registerDiscordCommands, getBotInvite } from "@/lib/discord.functions";
 import { createApiKey } from "@/lib/apikeys.functions";
 
 export const Route = createFileRoute("/")({
+  validateSearch: (search: Record<string, unknown>): { tab: "scripts" | "discord" | "api" } => ({
+    tab: search.tab === "discord" || search.tab === "api" ? search.tab : "scripts",
+  }),
   head: () => ({
     meta: [
       { title: "Vault — Roblox Script Protection & Key System" },
       { name: "description", content: "Host Roblox scripts behind license keys with HWID locking, expiry and bans." },
       { property: "og:title", content: "Vault — Roblox Script Protection" },
       { property: "og:description", content: "License keys, HWID lock and protected script delivery." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Index,
@@ -81,7 +86,7 @@ function Auth() {
 function Dashboard() {
   const [scripts, setScripts] = useState<Script[]>([]);
   const [sel, setSel] = useState<Script | null>(null);
-  const [tab, setTab] = useState<"scripts" | "discord" | "api">("scripts");
+  const { tab } = Route.useSearch();
   const [creating, setCreating] = useState(false);
   const [setupFor, setSetupFor] = useState<Script | null>(null);
   const load = async () => {
@@ -90,17 +95,8 @@ function Dashboard() {
     return data ?? [];
   };
   useEffect(() => { load(); }, []);
-  const tabs = [["scripts", "Scripts"], ["discord", "Discord"], ["api", "API keys"]] as const;
   return (
     <div className="mx-auto max-w-6xl px-6 py-6">
-      <nav className="mb-6 flex gap-1 border-b border-border">
-        {tabs.map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-            {label}
-          </button>
-        ))}
-      </nav>
       {tab === "discord" && <DiscordPanel />}
       {tab === "api" && <ApiPanel />}
       {tab === "scripts" && (setupFor ? (
