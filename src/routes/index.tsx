@@ -80,34 +80,225 @@ function Auth() {
 function Dashboard() {
   const [scripts, setScripts] = useState<Script[]>([]);
   const [sel, setSel] = useState<Script | null>(null);
+  const [tab, setTab] = useState<"scripts" | "discord" | "api">("scripts");
+  const [creating, setCreating] = useState(false);
+  const [setupFor, setSetupFor] = useState<Script | null>(null);
   const load = async () => {
-    const { data } = await supabase.from("scripts").select("id,name,source,executions,enabled,keyless,getkey_enabled,checkpoints,getkey_hours,discord_webhook").order("created_at");
+    const { data } = await supabase.from("scripts").select(COLS).order("created_at");
     setScripts(data ?? []);
+    return data ?? [];
   };
   useEffect(() => { load(); }, []);
-  const create = async () => {
-    const name = prompt("Script name?");
-    if (!name) return;
-    const { data, error } = await supabase.from("scripts").insert({ name }).select("id,name,source,executions,enabled,keyless,getkey_enabled,checkpoints,getkey_hours,discord_webhook").single();
-    if (error) { toast.error(error.message); return; }
-    await load(); setSel(data);
-  };
+  const tabs = [["scripts", "Scripts"], ["discord", "Discord"], ["api", "API keys"]] as const;
   return (
-    <main className="mx-auto max-w-6xl grid gap-6 px-6 py-8 md:grid-cols-[240px_1fr]">
-      <aside className="space-y-2">
-        <Button className="w-full" onClick={create}>+ New script</Button>
-        {scripts.map((s) => (
-          <button key={s.id} onClick={() => setSel(s)}
-            className={`w-full rounded-md border px-3 py-2 text-left text-sm ${sel?.id === s.id ? "border-primary text-primary" : "border-border"}`}>
-            {s.name}<span className="block text-xs text-muted-foreground">{s.executions} runs</span>
+    <div className="mx-auto max-w-6xl px-6 py-6">
+      <nav className="mb-6 flex gap-1 border-b border-border">
+        {tabs.map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            {label}
           </button>
         ))}
-        <DiscordPanel />
-      </aside>
-      {sel ? <ScriptPanel key={sel.id} script={sel} onChange={load} onDelete={() => { setSel(null); load(); }} /> : (
-        <p className="text-muted-foreground">Create or pick a script.</p>
+      </nav>
+      {tab === "discord" && <DiscordPanel />}
+      {tab === "api" && <ApiPanel />}
+      {tab === "scripts" && (setupFor ? (
+        <KeySystemSetup script={setupFor} onDone={async () => {
+          const list = await load(); setSel(list.find((s) => s.id === setupFor.id) ?? null); setSetupFor(null);
+        }} />
+      ) : creating ? (
+        <NewScriptForm onCancel={() => setCreating(false)} onCreated={async (s) => { setCreating(false); await load(); setSetupFor(s); }} />
+      ) : (
+        <main className="grid gap-6 md:grid-cols-[240px_1fr]">
+          <aside className="space-y-2">
+            <Button className="w-full" onClick={() => setCreating(true)}>+ New script</Button>
+            {scripts.map((s) => (
+              <button key={s.id} onClick={() => setSel(s)}
+                className={`w-full rounded-md border px-3 py-2 text-left text-sm ${sel?.id === s.id ? "border-primary text-primary" : "border-border"}`}>
+                {s.name}<span className="block text-xs text-muted-foreground">{s.executions} runs</span>
+              </button>
+            ))}
+          </aside>
+          {sel ? <ScriptPanel key={sel.id} script={sel} onChange={load} onDelete={() => { setSel(null); load(); }} /> : (
+            <p className="text-muted-foreground">Create or pick a script.</p>
+          )}
+        </main>
+      ))}
+    </div>
+  );
+}
+
+const COLS = "id,name,source,executions,enabled,keyless,getkey_enabled,checkpoints,getkey_hours,discord_webhook";
+
+function NewScriptForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (s: Script) => void }) {
+  const [name, setName] = useState("");
+  const [source, setSource] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault(); setBusy(true);
+    const { data, error } = await supabase.from("scripts").insert({ name: name.trim(), source }).select(COLS).single();
+    setBusy(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Script submitted"); onCreated(data);
+  };
+  return (
+    <form onSubmit={submit} className="mx-auto max-w-2xl space-y-4">
+      <div className="text-xs text-muted-foreground">Step 1 of 2</div>
+      <h2 className="text-2xl font-bold">Submit your script</h2>
+      <Input placeholder="Script name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
+      <Textarea rows={14} className="font-mono text-xs" placeholder='print("hello") -- your Lua source' value={source} onChange={(e) => setSource(e.target.value)} />
+      <div className="flex gap-2">
+        <Button type="submit" disabled={busy || !name.trim()}>Submit script →</Button>
+        <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
+      </div>
+    </form>
+  );
+}
+
+function KeySystemSetup({ script, onDone }: { script: Script; onDone: () => void }) {
+  const [mode, setMode] = useState<"keys" | "free" | "keyless">("keys");
+  const [cps, setCps] = useState("");
+  const [hours, setHours] = useState("24");
+  const [count, setCount] = useState("1");
+  const [days, setDays] = useState("");
+  const [busy, setBusy] = useState(false);
+  const opts = [
+    ["keys", "Paid keys", "You generate keys and hand them to buyers. HWID-locked."],
+    ["free", "Free key system", "Users pass ad checkpoints (Linkvertise / LootLabs / Work.ink) to get a temporary key."],
+    ["keyless", "Keyless", "Anyone with the loader can run it. No keys."],
+  ] as const;
+  const finish = async () => {
+    setBusy(true);
+    const checkpoints = cps.split("\n").map((l) => l.trim()).filter((l) => /^https?:\/\//.test(l));
+    if (mode === "free" && checkpoints.length === 0) { setBusy(false); toast.error("Add at least one checkpoint link"); return; }
+    const { error } = await supabase.from("scripts").update({
+      keyless: mode === "keyless",
+      getkey_enabled: mode === "free",
+      checkpoints,
+      getkey_hours: Math.max(1, Number(hours) || 24),
+    }).eq("id", script.id);
+    if (error) { setBusy(false); toast.error(error.message); return; }
+    if (mode === "keys") {
+      const n = Math.min(100, Math.max(0, Number(count) || 0));
+      const expires_at = days ? new Date(Date.now() + Number(days) * 864e5).toISOString() : null;
+      const rows = Array.from({ length: n }, () => ({
+        script_id: script.id, expires_at,
+        key: Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""),
+      }));
+      if (rows.length) {
+        const { error: e2 } = await supabase.from("license_keys").insert(rows);
+        if (e2) { setBusy(false); toast.error(e2.message); return; }
+      }
+    }
+    setBusy(false); toast.success("Key system ready"); onDone();
+  };
+  return (
+    <div className="mx-auto max-w-2xl space-y-5">
+      <div className="text-xs text-muted-foreground">Step 2 of 2 · {script.name}</div>
+      <h2 className="text-2xl font-bold">Set up the key system</h2>
+      <div className="grid gap-2">
+        {opts.map(([id, title, desc]) => (
+          <button key={id} type="button" onClick={() => setMode(id)}
+            className={`rounded-md border p-4 text-left ${mode === id ? "border-primary bg-card" : "border-border"}`}>
+            <div className={`font-bold ${mode === id ? "text-primary" : ""}`}>{title}</div>
+            <div className="text-xs text-muted-foreground">{desc}</div>
+          </button>
+        ))}
+      </div>
+      {mode === "keys" && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Generate</span>
+          <Input className="w-20" type="number" min={0} max={100} value={count} onChange={(e) => setCount(e.target.value)} />
+          <span className="text-muted-foreground">keys lasting</span>
+          <Input className="w-28" type="number" placeholder="∞ days" value={days} onChange={(e) => setDays(e.target.value)} />
+          <span className="text-muted-foreground">days</span>
+        </div>
       )}
-    </main>
+      {mode === "free" && (
+        <div className="space-y-2">
+          <Textarea rows={3} className="font-mono text-xs" placeholder="One ad link per line (https://linkvertise.com/...)" value={cps} onChange={(e) => setCps(e.target.value)} />
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Key lasts</span>
+            <Input className="w-20" type="number" value={hours} onChange={(e) => setHours(e.target.value)} />
+            <span className="text-muted-foreground">hours</span>
+          </div>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Button onClick={finish} disabled={busy}>Finish setup</Button>
+        <Button variant="ghost" onClick={onDone}>Skip for now</Button>
+      </div>
+    </div>
+  );
+}
+
+type ApiKey = { id: string; name: string; prefix: string; last_used_at: string | null; created_at: string };
+
+function ApiPanel() {
+  const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [name, setName] = useState("");
+  const [fresh, setFresh] = useState<string | null>(null);
+  const create = useServerFn(createApiKey);
+  const load = async () => {
+    const { data } = await supabase.from("api_keys").select("id,name,prefix,last_used_at,created_at").order("created_at", { ascending: false });
+    setKeys(data ?? []);
+  };
+  useEffect(() => { load(); }, []);
+  const make = async () => {
+    try { const r = await create({ data: { name: name || "My key" } }); setFresh(r.key); setName(""); load(); }
+    catch (e) { toast.error((e as Error).message); }
+  };
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const k = fresh ?? "vk_YOUR_KEY";
+  return (
+    <div className="mx-auto max-w-3xl space-y-6">
+      {keys.length === 0 && !fresh ? (
+        <div className="rounded-md border border-primary p-6 text-center space-y-3">
+          <h2 className="text-xl font-bold">Do you want to make an API key?</h2>
+          <p className="text-sm text-muted-foreground">An API key lets your own tools, bots or panels create and manage scripts and keys without the dashboard.</p>
+          <div className="flex justify-center gap-2">
+            <Input className="w-56" placeholder="Key name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
+            <Button onClick={make}>Yes, make one</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <Input placeholder="New key name" value={name} onChange={(e) => setName(e.target.value)} />
+          <Button onClick={make}>Create API key</Button>
+        </div>
+      )}
+      {fresh && (
+        <div className="rounded-md border border-primary bg-card p-4 space-y-2">
+          <div className="text-sm font-bold">Copy your key now — it won't be shown again.</div>
+          <code className="block break-all text-primary text-xs">{fresh}</code>
+          <Button size="sm" variant="secondary" onClick={() => { navigator.clipboard.writeText(fresh); toast.success("Copied"); }}>Copy</Button>
+        </div>
+      )}
+      <div className="space-y-2">
+        {keys.map((x) => (
+          <div key={x.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-xs">
+            <span><b>{x.name}</b> <code className="text-muted-foreground">{x.prefix}…</code></span>
+            <span className="flex items-center gap-2 text-muted-foreground">
+              {x.last_used_at ? `used ${new Date(x.last_used_at).toLocaleString()}` : "never used"}
+              <Button size="sm" variant="ghost" onClick={async () => { if (confirm("Revoke this key?")) { await supabase.from("api_keys").delete().eq("id", x.id); load(); } }}>Revoke</Button>
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="space-y-2">
+        <h3 className="font-bold">Make a script with your key</h3>
+        <pre className="overflow-x-auto rounded-md border border-border bg-card p-3 text-xs">{`curl -X POST ${origin}/api/public/v1/scripts \\
+  -H "Authorization: Bearer ${k}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"My Script","source":"print(\\"hi\\")"}'`}</pre>
+        <div className="text-xs text-muted-foreground space-y-1">
+          <div><code>GET /api/public/v1/scripts</code> — list scripts</div>
+          <div><code>POST /api/public/v1/scripts</code> — create (name, source, keyless) → returns loader</div>
+          <div><code>GET | PATCH | DELETE /api/public/v1/scripts/:id</code> — read / update (name, source, enabled, keyless) / delete</div>
+          <div><code>GET | POST /api/public/v1/scripts/:id/keys</code> — list / generate key (note, days)</div>
+        </div>
+      </div>
+    </div>
   );
 }
 
