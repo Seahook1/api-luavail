@@ -10,33 +10,140 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as RedeemRouteImport } from './routes/redeem'
+import { Route as GetkeyScriptIdRouteImport } from './routes/getkey.$scriptId'
+import { Route as ApiPublicDiscordRouteImport } from './routes/api/public/discord'
+import { Route as ApiPublicFetchRouteImport } from './routes/api/public/fetch'
+import { Route as ApiPublicLoaderScriptIdRouteImport } from './routes/api/public/loader.$scriptId'
+import { Route as ApiPublicV1ScriptsRouteImport } from './routes/api/public/v1/scripts'
+import { Route as ApiPublicV1ScriptsIdRouteImport } from './routes/api/public/v1/scripts.$id'
+import { Route as ApiPublicV1ScriptsIdKeysRouteImport } from './routes/api/public/v1/scripts.$id.keys'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RedeemRoute = RedeemRouteImport.update({
+  id: '/redeem',
+  path: '/redeem',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GetkeyScriptIdRoute = GetkeyScriptIdRouteImport.update({
+  id: '/getkey/$scriptId',
+  path: '/getkey/$scriptId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicDiscordRoute = ApiPublicDiscordRouteImport.update({
+  id: '/api/public/discord',
+  path: '/api/public/discord',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicFetchRoute = ApiPublicFetchRouteImport.update({
+  id: '/api/public/fetch',
+  path: '/api/public/fetch',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicLoaderScriptIdRoute = ApiPublicLoaderScriptIdRouteImport.update({
+  id: '/api/public/loader/$scriptId',
+  path: '/api/public/loader/$scriptId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicV1ScriptsRoute = ApiPublicV1ScriptsRouteImport.update({
+  id: '/api/public/v1/scripts',
+  path: '/api/public/v1/scripts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicV1ScriptsIdRoute = ApiPublicV1ScriptsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiPublicV1ScriptsRoute,
+} as any)
+const ApiPublicV1ScriptsIdKeysRoute =
+  ApiPublicV1ScriptsIdKeysRouteImport.update({
+    id: '/keys',
+    path: '/keys',
+    getParentRoute: () => ApiPublicV1ScriptsIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/redeem': typeof RedeemRoute
+  '/getkey/$scriptId': typeof GetkeyScriptIdRoute
+  '/api/public/discord': typeof ApiPublicDiscordRoute
+  '/api/public/fetch': typeof ApiPublicFetchRoute
+  '/api/public/v1/scripts': typeof ApiPublicV1ScriptsRouteWithChildren
+  '/api/public/loader/$scriptId': typeof ApiPublicLoaderScriptIdRoute
+  '/api/public/v1/scripts/$id': typeof ApiPublicV1ScriptsIdRouteWithChildren
+  '/api/public/v1/scripts/$id/keys': typeof ApiPublicV1ScriptsIdKeysRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/redeem': typeof RedeemRoute
+  '/getkey/$scriptId': typeof GetkeyScriptIdRoute
+  '/api/public/discord': typeof ApiPublicDiscordRoute
+  '/api/public/fetch': typeof ApiPublicFetchRoute
+  '/api/public/v1/scripts': typeof ApiPublicV1ScriptsRouteWithChildren
+  '/api/public/loader/$scriptId': typeof ApiPublicLoaderScriptIdRoute
+  '/api/public/v1/scripts/$id': typeof ApiPublicV1ScriptsIdRouteWithChildren
+  '/api/public/v1/scripts/$id/keys': typeof ApiPublicV1ScriptsIdKeysRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/redeem': typeof RedeemRoute
+  '/getkey/$scriptId': typeof GetkeyScriptIdRoute
+  '/api/public/discord': typeof ApiPublicDiscordRoute
+  '/api/public/fetch': typeof ApiPublicFetchRoute
+  '/api/public/v1/scripts': typeof ApiPublicV1ScriptsRouteWithChildren
+  '/api/public/loader/$scriptId': typeof ApiPublicLoaderScriptIdRoute
+  '/api/public/v1/scripts/$id': typeof ApiPublicV1ScriptsIdRouteWithChildren
+  '/api/public/v1/scripts/$id/keys': typeof ApiPublicV1ScriptsIdKeysRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/redeem'
+    | '/getkey/$scriptId'
+    | '/api/public/discord'
+    | '/api/public/fetch'
+    | '/api/public/v1/scripts'
+    | '/api/public/loader/$scriptId'
+    | '/api/public/v1/scripts/$id'
+    | '/api/public/v1/scripts/$id/keys'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/redeem'
+    | '/getkey/$scriptId'
+    | '/api/public/discord'
+    | '/api/public/fetch'
+    | '/api/public/v1/scripts'
+    | '/api/public/loader/$scriptId'
+    | '/api/public/v1/scripts/$id'
+    | '/api/public/v1/scripts/$id/keys'
+  id:
+    | '__root__'
+    | '/'
+    | '/redeem'
+    | '/getkey/$scriptId'
+    | '/api/public/discord'
+    | '/api/public/fetch'
+    | '/api/public/v1/scripts'
+    | '/api/public/loader/$scriptId'
+    | '/api/public/v1/scripts/$id'
+    | '/api/public/v1/scripts/$id/keys'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  RedeemRoute: typeof RedeemRoute
+  GetkeyScriptIdRoute: typeof GetkeyScriptIdRoute
+  ApiPublicDiscordRoute: typeof ApiPublicDiscordRoute
+  ApiPublicFetchRoute: typeof ApiPublicFetchRoute
+  ApiPublicV1ScriptsRoute: typeof ApiPublicV1ScriptsRouteWithChildren
+  ApiPublicLoaderScriptIdRoute: typeof ApiPublicLoaderScriptIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +155,95 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/redeem': {
+      id: '/redeem'
+      path: '/redeem'
+      fullPath: '/redeem'
+      preLoaderRoute: typeof RedeemRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/getkey/$scriptId': {
+      id: '/getkey/$scriptId'
+      path: '/getkey/$scriptId'
+      fullPath: '/getkey/$scriptId'
+      preLoaderRoute: typeof GetkeyScriptIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/discord': {
+      id: '/api/public/discord'
+      path: '/api/public/discord'
+      fullPath: '/api/public/discord'
+      preLoaderRoute: typeof ApiPublicDiscordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/fetch': {
+      id: '/api/public/fetch'
+      path: '/api/public/fetch'
+      fullPath: '/api/public/fetch'
+      preLoaderRoute: typeof ApiPublicFetchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/loader/$scriptId': {
+      id: '/api/public/loader/$scriptId'
+      path: '/api/public/loader/$scriptId'
+      fullPath: '/api/public/loader/$scriptId'
+      preLoaderRoute: typeof ApiPublicLoaderScriptIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/scripts': {
+      id: '/api/public/v1/scripts'
+      path: '/api/public/v1/scripts'
+      fullPath: '/api/public/v1/scripts'
+      preLoaderRoute: typeof ApiPublicV1ScriptsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/scripts/$id': {
+      id: '/api/public/v1/scripts/$id'
+      path: '/$id'
+      fullPath: '/api/public/v1/scripts/$id'
+      preLoaderRoute: typeof ApiPublicV1ScriptsIdRouteImport
+      parentRoute: typeof ApiPublicV1ScriptsRoute
+    }
+    '/api/public/v1/scripts/$id/keys': {
+      id: '/api/public/v1/scripts/$id/keys'
+      path: '/keys'
+      fullPath: '/api/public/v1/scripts/$id/keys'
+      preLoaderRoute: typeof ApiPublicV1ScriptsIdKeysRouteImport
+      parentRoute: typeof ApiPublicV1ScriptsIdRoute
+    }
   }
 }
 
+interface ApiPublicV1ScriptsIdRouteChildren {
+  ApiPublicV1ScriptsIdKeysRoute: typeof ApiPublicV1ScriptsIdKeysRoute
+}
+
+const ApiPublicV1ScriptsIdRouteChildren: ApiPublicV1ScriptsIdRouteChildren = {
+  ApiPublicV1ScriptsIdKeysRoute: ApiPublicV1ScriptsIdKeysRoute,
+}
+
+const ApiPublicV1ScriptsIdRouteWithChildren =
+  ApiPublicV1ScriptsIdRoute._addFileChildren(ApiPublicV1ScriptsIdRouteChildren)
+
+interface ApiPublicV1ScriptsRouteChildren {
+  ApiPublicV1ScriptsIdRoute: typeof ApiPublicV1ScriptsIdRouteWithChildren
+}
+
+const ApiPublicV1ScriptsRouteChildren: ApiPublicV1ScriptsRouteChildren = {
+  ApiPublicV1ScriptsIdRoute: ApiPublicV1ScriptsIdRouteWithChildren,
+}
+
+const ApiPublicV1ScriptsRouteWithChildren =
+  ApiPublicV1ScriptsRoute._addFileChildren(ApiPublicV1ScriptsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  RedeemRoute: RedeemRoute,
+  GetkeyScriptIdRoute: GetkeyScriptIdRoute,
+  ApiPublicDiscordRoute: ApiPublicDiscordRoute,
+  ApiPublicFetchRoute: ApiPublicFetchRoute,
+  ApiPublicV1ScriptsRoute: ApiPublicV1ScriptsRouteWithChildren,
+  ApiPublicLoaderScriptIdRoute: ApiPublicLoaderScriptIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
