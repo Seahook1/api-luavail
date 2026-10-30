@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Keep primary tabs in the shared root shell and select dashboard panels through validated URL search parameters so navigation works from every page and survives refreshes.
