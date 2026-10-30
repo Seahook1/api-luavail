@@ -14,7 +14,228 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      api_keys: {
+        Row: {
+          created_at: string
+          id: string
+          key_hash: string
+          last_used_at: string | null
+          name: string
+          owner_id: string
+          prefix: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key_hash: string
+          last_used_at?: string | null
+          name: string
+          owner_id?: string
+          prefix: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key_hash?: string
+          last_used_at?: string | null
+          name?: string
+          owner_id?: string
+          prefix?: string
+        }
+        Relationships: []
+      }
+      discord_links: {
+        Row: {
+          created_at: string
+          guild_id: string | null
+          link_code: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          guild_id?: string | null
+          link_code: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          guild_id?: string | null
+          link_code?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      execution_logs: {
+        Row: {
+          created_at: string
+          id: string
+          ip: string | null
+          key_id: string | null
+          key_note: string | null
+          result: string
+          script_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ip?: string | null
+          key_id?: string | null
+          key_note?: string | null
+          result: string
+          script_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ip?: string | null
+          key_id?: string | null
+          key_note?: string | null
+          result?: string
+          script_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "execution_logs_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: false
+            referencedRelation: "scripts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      getkey_sessions: {
+        Row: {
+          created_at: string
+          id: string
+          ip: string | null
+          key: string | null
+          script_id: string
+          step: number
+          step_started_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ip?: string | null
+          key?: string | null
+          script_id: string
+          step?: number
+          step_started_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ip?: string | null
+          key?: string | null
+          script_id?: string
+          step?: number
+          step_started_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "getkey_sessions_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: false
+            referencedRelation: "scripts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      license_keys: {
+        Row: {
+          banned: boolean
+          created_at: string
+          expires_at: string | null
+          hwid: string | null
+          hwid_reset_at: string | null
+          id: string
+          key: string
+          last_used_at: string | null
+          note: string | null
+          owner_id: string
+          script_id: string
+        }
+        Insert: {
+          banned?: boolean
+          created_at?: string
+          expires_at?: string | null
+          hwid?: string | null
+          hwid_reset_at?: string | null
+          id?: string
+          key: string
+          last_used_at?: string | null
+          note?: string | null
+          owner_id?: string
+          script_id: string
+        }
+        Update: {
+          banned?: boolean
+          created_at?: string
+          expires_at?: string | null
+          hwid?: string | null
+          hwid_reset_at?: string | null
+          id?: string
+          key?: string
+          last_used_at?: string | null
+          note?: string | null
+          owner_id?: string
+          script_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "license_keys_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: false
+            referencedRelation: "scripts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scripts: {
+        Row: {
+          checkpoints: string[]
+          created_at: string
+          discord_webhook: string | null
+          enabled: boolean
+          executions: number
+          getkey_enabled: boolean
+          getkey_hours: number
+          id: string
+          keyless: boolean
+          name: string
+          owner_id: string
+          source: string
+        }
+        Insert: {
+          checkpoints?: string[]
+          created_at?: string
+          discord_webhook?: string | null
+          enabled?: boolean
+          executions?: number
+          getkey_enabled?: boolean
+          getkey_hours?: number
+          id?: string
+          keyless?: boolean
+          name: string
+          owner_id?: string
+          source?: string
+        }
+        Update: {
+          checkpoints?: string[]
+          created_at?: string
+          discord_webhook?: string | null
+          enabled?: boolean
+          executions?: number
+          getkey_enabled?: boolean
+          getkey_hours?: number
+          id?: string
+          keyless?: boolean
+          name?: string
+          owner_id?: string
+          source?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
