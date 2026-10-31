@@ -16,7 +16,9 @@ export function AppTabs() {
           </Button>
         ))}
         <Button variant={location.pathname === "/redeem" ? "secondary" : "ghost"} size="sm" asChild>
-          <Link to="/redeem" aria-current={location.pathname === "/redeem" ? "page" : undefined}>Buyer portal</Link>
+          <Link to="/redeem" aria-current={location.pathname === "/redeem" ? "page" : undefined}>
+            Buyer portal
+          </Link>
         </Button>
       </div>
     </nav>

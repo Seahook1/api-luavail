@@ -10,7 +10,10 @@ export const Route = createFileRoute("/redeem")({
   head: () => ({
     meta: [
       { title: "Get Your Loader — Vault" },
-      { name: "description", content: "Enter your license key to get your loader line and check if your key is valid." },
+      {
+        name: "description",
+        content: "Enter your license key to get your loader line and check if your key is valid.",
+      },
       { property: "og:title", content: "Get Your Loader — Vault" },
       { property: "og:description", content: "Enter your key to get your loader and key status." },
       { property: "og:type", content: "website" },
@@ -41,7 +44,11 @@ function Redeem() {
     setBusy(true);
     setCopied(false);
     setResetMsg("");
-    try { setRes(await check({ data: { key } })); } finally { setBusy(false); }
+    try {
+      setRes(await check({ data: { key } }));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -52,21 +59,34 @@ function Redeem() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <Link to="/" className="font-bold text-lg">Vault</Link>
+        <Link to="/" search={{ tab: "scripts" }} className="font-bold text-lg">
+          Vault
+        </Link>
         <span className="text-sm text-muted-foreground">Buyer portal</span>
       </header>
       <main className="max-w-xl mx-auto px-6 py-12 space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Get your loader</h1>
-          <p className="text-muted-foreground text-sm mt-1">Enter the key you received to get your script loader.</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            Enter the key you received to get your script loader.
+          </p>
         </div>
         <form onSubmit={submit} className="flex gap-2">
-          <Input value={key} onChange={(e) => setKey(e.target.value)} placeholder="Your license key" maxLength={128} />
-          <Button type="submit" disabled={busy || !key.trim()}>{busy ? "Checking..." : "Check"}</Button>
+          <Input
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="Your license key"
+            maxLength={128}
+          />
+          <Button type="submit" disabled={busy || !key.trim()}>
+            {busy ? "Checking..." : "Check"}
+          </Button>
         </form>
 
         {res && !res.found && (
-          <div className="rounded-md border border-destructive p-4 text-destructive">Key not found.</div>
+          <div className="rounded-md border border-destructive p-4 text-destructive">
+            Key not found.
+          </div>
         )}
 
         {res?.found && (
@@ -78,25 +98,41 @@ function Redeem() {
               </Badge>
             </div>
             <div className="text-sm text-muted-foreground space-y-1">
-              <div>Expires: {res.expiresAt ? new Date(res.expiresAt).toLocaleString() : "Never"}</div>
+              <div>
+                Expires: {res.expiresAt ? new Date(res.expiresAt).toLocaleString() : "Never"}
+              </div>
               <div>Device lock: {res.hwidLocked ? "Locked to your device" : "Not used yet"}</div>
             </div>
             {res.status === "valid" && res.hwidLocked && (
               <div className="space-y-1">
-                <Button size="sm" variant="outline" onClick={doReset}>Reset device (once per 24h)</Button>
+                <Button size="sm" variant="outline" onClick={doReset}>
+                  Reset device (once per 24h)
+                </Button>
                 {resetMsg && <p className="text-xs text-muted-foreground">{resetMsg}</p>}
               </div>
             )}
-            {resetMsg && !res.hwidLocked && <p className="text-xs text-muted-foreground">{resetMsg}</p>}
+            {resetMsg && !res.hwidLocked && (
+              <p className="text-xs text-muted-foreground">{resetMsg}</p>
+            )}
             {res.status === "valid" ? (
               <>
-                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto whitespace-pre">{loader}</pre>
-                <Button variant="secondary" onClick={() => { navigator.clipboard.writeText(loader); setCopied(true); }}>
+                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto whitespace-pre">
+                  {loader}
+                </pre>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    navigator.clipboard.writeText(loader);
+                    setCopied(true);
+                  }}
+                >
                   {copied ? "Copied!" : "Copy loader"}
                 </Button>
               </>
             ) : (
-              <p className="text-sm text-destructive">This key can no longer be used. Contact the seller.</p>
+              <p className="text-sm text-destructive">
+                This key can no longer be used. Contact the seller.
+              </p>
             )}
           </div>
         )}
