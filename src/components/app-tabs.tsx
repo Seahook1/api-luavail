@@ -15,7 +15,7 @@ export function AppTabs() {
     location.pathname === "/" ? (params.get("tab") as TabId) ?? "scripts" : "buyer";
 
   const base =
-    "relative px-4 py-3 text-sm font-medium tracking-tight whitespace-nowrap transition-colors";
+    "relative px-3 py-3 text-sm font-medium tracking-tight whitespace-nowrap transition-colors sm:px-4";
   const off = "text-muted-foreground hover:text-foreground";
   const on = "text-foreground after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary";
 
@@ -33,13 +33,13 @@ export function AppTabs() {
             {tab.label}
           </Link>
         ))}
-        <span aria-hidden className="mx-2 h-5 w-px shrink-0 bg-border" />
+        <span aria-hidden className="mx-1 hidden h-5 w-px shrink-0 bg-border sm:mx-2 sm:block" />
         <Link
           to="/redeem"
           aria-current={active === "buyer" ? "page" : undefined}
           className={`${base} ${active === "buyer" ? on : off}`}
         >
-          Buyer portal
+          Buyer<span className="hidden sm:inline"> portal</span>
         </Link>
       </div>
     </nav>
