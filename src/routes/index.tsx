@@ -80,9 +80,6 @@ function Index() {
       <header className="border-b border-border px-6 py-4 flex items-center justify-between">
         <span className="text-lg font-bold text-primary">▲ VAULT</span>
         <div className="flex items-center gap-2">
-          <a href="/redeem" className="text-sm text-muted-foreground hover:text-foreground">
-            Buyer portal
-          </a>
           {session && (
             <Button variant="ghost" size="sm" onClick={() => supabase.auth.signOut()}>
               Sign out
