@@ -333,7 +333,8 @@ function ScriptPanel({ script, onChange, onDelete }: { script: Script; onChange:
     const v = hook.trim();
     if (v && !/^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(v)) { toast.error("That isn't a Discord webhook URL"); return; }
     const { error } = await supabase.from("scripts").update({ discord_webhook: v || null }).eq("id", script.id);
-    error ? toast.error(error.message) : (toast.success("Alerts saved"), onChange());
+    if (error) toast.error(error.message);
+    else { toast.success("Alerts saved"); onChange(); }
   };
   const [days, setDays] = useState("");
   const [note, setNote] = useState("");
@@ -348,7 +349,8 @@ function ScriptPanel({ script, onChange, onDelete }: { script: Script; onChange:
 
   const save = async () => {
     const { error } = await supabase.from("scripts").update({ source }).eq("id", script.id);
-    error ? toast.error(error.message) : (toast.success("Saved"), onChange());
+    if (error) toast.error(error.message);
+    else { toast.success("Saved"); onChange(); }
   };
   const genKey = async () => {
     const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -472,7 +474,8 @@ function DiscordPanel() {
     await supabase.from("discord_links").delete().eq("user_id", u.user.id);
     const code = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("");
     const { error } = await supabase.from("discord_links").insert({ user_id: u.user.id, link_code: code });
-    error ? toast.error(error.message) : load();
+    if (error) toast.error(error.message);
+    else await load();
   };
   const step = "rounded-md border border-border p-4 space-y-2";
   return (
@@ -488,7 +491,7 @@ function DiscordPanel() {
       </div>
       <div className={step}>
         <div className="font-bold">2. Register slash commands</div>
-        <Button size="sm" variant="secondary" onClick={async () => { const r = await register(); r.ok ? toast.success(r.message) : toast.error(r.message); }}>Register commands</Button>
+        <Button size="sm" variant="secondary" onClick={async () => { const r = await register(); if (r.ok) toast.success(r.message); else toast.error(r.message); }}>Register commands</Button>
       </div>
       <div className={step}>
         <div className="font-bold">3. Link your server</div>
