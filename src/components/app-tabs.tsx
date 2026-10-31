@@ -11,16 +11,26 @@ type TabId = (typeof TABS)[number]["id"];
 export function AppTabs() {
   const location = useLocation();
   const params = new URLSearchParams(location.searchStr);
-  const active: TabId | "buyer" =
-    location.pathname === "/" ? (params.get("tab") as TabId) ?? "scripts" : "buyer";
+  const active: TabId | "buyer" | "admin" | null =
+    location.pathname === "/"
+      ? ((params.get("tab") as TabId) ?? "scripts")
+      : location.pathname === "/admin"
+        ? "admin"
+        : location.pathname === "/redeem"
+          ? "buyer"
+          : null;
 
   const base =
     "relative px-3 py-3 text-sm font-medium tracking-tight whitespace-nowrap transition-colors sm:px-4";
   const off = "text-muted-foreground hover:text-foreground";
-  const on = "text-foreground after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary";
+  const on =
+    "text-foreground after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary";
 
   return (
-    <nav aria-label="Main tabs" className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur text-foreground">
+    <nav
+      aria-label="Main tabs"
+      className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur text-foreground"
+    >
       <div className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-2">
         {TABS.map((tab) => (
           <Link
@@ -40,6 +50,13 @@ export function AppTabs() {
           className={`${base} ${active === "buyer" ? on : off}`}
         >
           Buyer<span className="hidden sm:inline"> portal</span>
+        </Link>
+        <Link
+          to="/admin"
+          aria-current={active === "admin" ? "page" : undefined}
+          className={`${base} ${active === "admin" ? on : off}`}
+        >
+          Admin
         </Link>
       </div>
     </nav>

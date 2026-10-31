@@ -202,6 +202,7 @@ export type Database = {
           getkey_hours: number
           id: string
           keyless: boolean
+          moderation_disabled: boolean
           name: string
           owner_id: string
           source: string
@@ -216,6 +217,7 @@ export type Database = {
           getkey_hours?: number
           id?: string
           keyless?: boolean
+          moderation_disabled?: boolean
           name: string
           owner_id?: string
           source?: string
@@ -230,9 +232,28 @@ export type Database = {
           getkey_hours?: number
           id?: string
           keyless?: boolean
+          moderation_disabled?: boolean
           name?: string
           owner_id?: string
           source?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
         }
         Relationships: []
       }
@@ -241,10 +262,44 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      admin_list_scripts: {
+        Args: never
+        Returns: {
+          checkpoints: string[]
+          created_at: string
+          discord_webhook: string | null
+          enabled: boolean
+          executions: number
+          getkey_enabled: boolean
+          getkey_hours: number
+          id: string
+          keyless: boolean
+          moderation_disabled: boolean
+          name: string
+          owner_id: string
+          source: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "scripts"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      admin_moderate_script: {
+        Args: { _action: string; _script_id: string }
+        Returns: undefined
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -371,6 +426,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin"],
+    },
   },
 } as const

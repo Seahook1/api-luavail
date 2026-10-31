@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as RedeemRouteImport } from './routes/redeem'
 import { Route as GetkeyScriptIdRouteImport } from './routes/getkey.$scriptId'
 import { Route as ApiPublicDiscordRouteImport } from './routes/api/public/discord'
@@ -22,6 +23,11 @@ import { Route as ApiPublicV1ScriptsIdKeysRouteImport } from './routes/api/publi
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RedeemRoute = RedeemRouteImport.update({
@@ -68,6 +74,7 @@ const ApiPublicV1ScriptsIdKeysRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/redeem': typeof RedeemRoute
   '/getkey/$scriptId': typeof GetkeyScriptIdRoute
   '/api/public/discord': typeof ApiPublicDiscordRoute
@@ -79,6 +86,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/redeem': typeof RedeemRoute
   '/getkey/$scriptId': typeof GetkeyScriptIdRoute
   '/api/public/discord': typeof ApiPublicDiscordRoute
@@ -91,6 +99,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/redeem': typeof RedeemRoute
   '/getkey/$scriptId': typeof GetkeyScriptIdRoute
   '/api/public/discord': typeof ApiPublicDiscordRoute
@@ -104,6 +113,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/redeem'
     | '/getkey/$scriptId'
     | '/api/public/discord'
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin'
     | '/redeem'
     | '/getkey/$scriptId'
     | '/api/public/discord'
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/admin'
     | '/redeem'
     | '/getkey/$scriptId'
     | '/api/public/discord'
@@ -138,6 +150,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   RedeemRoute: typeof RedeemRoute
   GetkeyScriptIdRoute: typeof GetkeyScriptIdRoute
   ApiPublicDiscordRoute: typeof ApiPublicDiscordRoute
@@ -153,6 +166,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/redeem': {
@@ -238,6 +258,7 @@ const ApiPublicV1ScriptsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   RedeemRoute: RedeemRoute,
   GetkeyScriptIdRoute: GetkeyScriptIdRoute,
   ApiPublicDiscordRoute: ApiPublicDiscordRoute,
