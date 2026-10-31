@@ -11,8 +11,8 @@ type TabId = (typeof TABS)[number]["id"];
 export function AppTabs() {
   const location = useLocation();
   const params = new URLSearchParams(location.searchStr);
-  const active: TabId | "buyer" =
-    location.pathname === "/" ? (params.get("tab") as TabId) ?? "scripts" : "buyer";
+  const active: TabId | "buyer" | "admin" | null =
+    location.pathname === "/" ? (params.get("tab") as TabId) ?? "scripts" : location.pathname === "/admin" ? "admin" : location.pathname === "/redeem" ? "buyer" : null;
 
   const base =
     "relative px-3 py-3 text-sm font-medium tracking-tight whitespace-nowrap transition-colors sm:px-4";
@@ -41,6 +41,7 @@ export function AppTabs() {
         >
           Buyer<span className="hidden sm:inline"> portal</span>
         </Link>
+        <Link to="/admin" aria-current={active === "admin" ? "page" : undefined} className={`${base} ${active === "admin" ? on : off}`}>Admin</Link>
       </div>
     </nav>
   );

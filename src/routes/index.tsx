@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
+import { useAppSession } from "@/components/session-provider";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,16 +65,13 @@ type Key = {
 };
 
 function Index() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setReady(true);
-    });
-    return () => data.subscription.unsubscribe();
-  }, []);
+  const { user: session, ready } = useAppSession();
+  const queryClient = useQueryClient();
+  const signOut = async () => {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    await supabase.auth.signOut();
+  };
   return (
     <div className="min-h-screen bg-background text-foreground font-mono">
       <Toaster />
@@ -81,7 +79,7 @@ function Index() {
         <span className="text-lg font-bold text-primary">▲ VAULT</span>
         <div className="flex items-center gap-2">
           {session && (
-            <Button variant="ghost" size="sm" onClick={() => supabase.auth.signOut()}>
+            <Button variant="ghost" size="sm" onClick={signOut}>
               Sign out
             </Button>
           )}
