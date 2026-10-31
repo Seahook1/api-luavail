@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { hostingAllowed } from "@/lib/moderation";
 
 const MIN_SECONDS = 10; // must spend at least this long on the ad link before returning
 const uuid = (v: unknown) => String(v ?? "").replace(/[^a-f0-9-]/gi, "").slice(0, 36);
@@ -6,8 +7,8 @@ const admin = async () => (await import("@/integrations/supabase/client.server")
 
 async function loadScript(id: string) {
   const sb = await admin();
-  const { data } = await sb.from("scripts").select("name, enabled, getkey_enabled, checkpoints, getkey_hours").eq("id", id).maybeSingle();
-  return data && data.getkey_enabled && data.checkpoints.length > 0 ? data : null;
+  const { data } = await sb.from("scripts").select("name, enabled, moderation_disabled, getkey_enabled, checkpoints, getkey_hours").eq("id", id).maybeSingle();
+  return data && hostingAllowed(data) && data.getkey_enabled && data.checkpoints.length > 0 ? data : null;
 }
 
 async function state(scriptId: string, sessionId: string) {
@@ -25,7 +26,8 @@ export const getKeyStatus = createServerFn({ method: "POST" })
     let s = data.sessionId ? await state(data.scriptId, data.sessionId) : null;
     if (!s) {
       const { data: n } = await sb.from("getkey_sessions").insert({ script_id: data.scriptId }).select("id, step, key, script_id").single();
-      s = n!;
+      if (!n) return { ok: false as const };
+      s = n;
     }
     return { ok: true as const, name: sc.name, total: sc.checkpoints.length, hours: sc.getkey_hours, sessionId: s.id, step: s.step, key: s.key };
   });
@@ -62,8 +64,9 @@ export const completeCheckpoint = createServerFn({ method: "POST" })
     if (step >= sc.checkpoints.length) {
       key = "FREE_" + Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
       const { data: owner } = await sb.from("scripts").select("owner_id").eq("id", data.scriptId).single();
+      if (!owner) return { message: "Script not found." };
       await sb.from("license_keys").insert({
-        script_id: data.scriptId, owner_id: owner!.owner_id, key, note: "get-key page",
+        script_id: data.scriptId, owner_id: owner.owner_id, key, note: "get-key page",
         expires_at: new Date(Date.now() + sc.getkey_hours * 3600e3).toISOString(),
       });
     }

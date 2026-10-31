@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { obfuscateLua } from "@/lib/obfuscate";
 import { sendDiscordAlert } from "@/lib/discord-commands";
+import { hostingAllowed } from "@/lib/moderation";
 
 const err = (m: string, status = 403) =>
   new Response(`--ERR:${m}`, { status, headers: { "content-type": "text/plain", "cache-control": "no-store" } });
@@ -20,8 +21,9 @@ export const Route = createFileRoute("/api/public/fetch")({
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const ip = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? null;
-        const { data: sc } = await supabaseAdmin.from("scripts").select("enabled, keyless, name, discord_webhook").eq("id", s).maybeSingle();
+        const { data: sc } = await supabaseAdmin.from("scripts").select("enabled, moderation_disabled, keyless, name, discord_webhook").eq("id", s).maybeSingle();
         if (!sc) return err("Script not found", 404);
+        if (!hostingAllowed(sc)) return err("Script hosting is disabled");
         if (sc.keyless) {
           const log = async (result: string) => {
             await supabaseAdmin.from("execution_logs").insert({ script_id: s, key_id: null, key_note: "keyless", result, ip });
@@ -63,7 +65,7 @@ export const Route = createFileRoute("/api/public/fetch")({
           .eq("id", lic.id);
         }
 
-        const { data: script } = await supabaseAdmin.from("scripts").select("source, executions").eq("id", s).maybeSingle();
+        const { data: script } = await supabaseAdmin.from("scripts").select("source, executions").eq("id", s).eq("moderation_disabled", false).eq("enabled", true).maybeSingle();
         if (!script) return err("Script not found", 404);
         await supabaseAdmin.from("scripts").update({ executions: script.executions + 1 }).eq("id", s);
 
