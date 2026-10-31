@@ -13,7 +13,7 @@ import { createApiKey } from "@/lib/apikeys.functions";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search: Record<string, unknown>): { tab: "scripts" | "discord" | "api" } => ({
-    tab: search.tab === "discord" || search.tab === "api" ? search.tab : "scripts",
+    tab: search["tab"] === "discord" || search["tab"] === "api" ? search["tab"] : "scripts",
   }),
   head: () => ({
     meta: [
