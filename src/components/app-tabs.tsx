@@ -1,25 +1,46 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { Button } from "@/components/ui/button";
+
+const TABS = [
+  { id: "scripts", label: "Scripts" },
+  { id: "discord", label: "Discord" },
+  { id: "api", label: "API keys" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
 
 export function AppTabs() {
   const location = useLocation();
   const params = new URLSearchParams(location.searchStr);
-  const selected = location.pathname === "/" ? (params.get("tab") ?? "scripts") : "buyer";
+  const active: TabId | "buyer" =
+    location.pathname === "/" ? (params.get("tab") as TabId) ?? "scripts" : "buyer";
+
+  const base =
+    "relative px-4 py-3 text-sm font-medium tracking-tight whitespace-nowrap transition-colors";
+  const off = "text-muted-foreground hover:text-foreground";
+  const on = "text-foreground after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary";
+
   return (
-    <nav aria-label="Main tabs" className="border-b border-border bg-background text-foreground">
-      <div className="mx-auto flex max-w-6xl flex-wrap gap-1 px-4 py-2">
-        {(["scripts", "discord", "api"] as const).map((tab) => (
-          <Button key={tab} variant={selected === tab ? "secondary" : "ghost"} size="sm" asChild>
-            <Link to="/" search={{ tab }} aria-current={selected === tab ? "page" : undefined}>
-              {tab === "scripts" ? "Scripts" : tab === "discord" ? "Discord" : "API keys"}
-            </Link>
-          </Button>
-        ))}
-        <Button variant={location.pathname === "/redeem" ? "secondary" : "ghost"} size="sm" asChild>
-          <Link to="/redeem" aria-current={location.pathname === "/redeem" ? "page" : undefined}>
-            Buyer portal
+    <nav aria-label="Main tabs" className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur text-foreground">
+      <div className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-2">
+        {TABS.map((tab) => (
+          <Link
+            key={tab.id}
+            to="/"
+            search={{ tab: tab.id }}
+            aria-current={active === tab.id ? "page" : undefined}
+            className={`${base} ${active === tab.id ? on : off}`}
+          >
+            {tab.label}
           </Link>
-        </Button>
+        ))}
+        <span aria-hidden className="mx-2 h-5 w-px shrink-0 bg-border" />
+        <Link
+          to="/redeem"
+          aria-current={active === "buyer" ? "page" : undefined}
+          className={`${base} ${active === "buyer" ? on : off}`}
+        >
+          Buyer portal
+        </Link>
       </div>
     </nav>
   );
