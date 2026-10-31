@@ -4,7 +4,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 
-const SessionContext = createContext<{ user: User | null; ready: boolean }>({ user: null, ready: false });
+const SessionContext = createContext<{ user: User | null; ready: boolean }>({
+  user: null,
+  ready: false,
+});
 export const useAppSession = () => useContext(SessionContext);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -16,7 +19,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let active = true;
     const refresh = async () => {
       const { data } = await supabase.auth.getUser();
-      if (active) { setUser(data.user); setReady(true); }
+      if (active) {
+        setUser(data.user);
+        setReady(true);
+      }
     };
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (!["SIGNED_IN", "SIGNED_OUT", "USER_UPDATED"].includes(event)) return;
@@ -26,7 +32,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (event !== "SIGNED_OUT") void queryClient.invalidateQueries();
     });
     void refresh();
-    return () => { active = false; data.subscription.unsubscribe(); };
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
   }, [queryClient, router]);
   return <SessionContext.Provider value={{ user, ready }}>{children}</SessionContext.Provider>;
 }
