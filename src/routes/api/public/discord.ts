@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 const hex = (h: string) => new Uint8Array(h.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
-const reply = (content: string) => Response.json({ type: 4, data: { content, flags: 64 } });
+const reply = (content: string, components?: unknown[]) =>
+  Response.json({ type: 4, data: { content, flags: 64, ...(components ? { components } : {}) } });
+const keyModal = (id: string, title: string) =>
+  Response.json({ type: 9, data: { custom_id: id, title, components: [{ type: 1, components: [{ type: 4, custom_id: "key", label: "License key", style: 1, min_length: 4, max_length: 128, required: true }] }] } });
+const btn = (label: string, custom_id: string, style = 2) => ({ type: 2, style, label, custom_id });
 
 async function verify(req: Request, body: string) {
   const pk = process.env["DISCORD_PUBLIC_KEY"];
@@ -24,11 +28,32 @@ export const Route = createFileRoute("/api/public/discord")({
         if (!(await verify(request, body))) return new Response("Invalid signature", { status: 401 });
         const i = JSON.parse(body);
         if (i.type === 1) return Response.json({ type: 1 });
-        if (i.type !== 2) return reply("Unsupported.");
+        if (i.type !== 2 && i.type !== 3 && i.type !== 5) return reply("Unsupported.");
 
         const { supabaseAdmin: db } = await import("@/integrations/supabase/client.server");
-        const name: string = i.data?.name;
-        const opts: Record<string, string | number> = Object.fromEntries(((i.data?.options ?? []) as Opt[]).map((o) => [o.name, o.value]));
+        let name: string = i.data?.name;
+        let opts: Record<string, string | number> = Object.fromEntries(((i.data?.options ?? []) as Opt[]).map((o) => [o.name, o.value]));
+
+        // Panel buttons
+        if (i.type === 3) {
+          const [, action, sid] = String(i.data?.custom_id ?? "").split(":");
+          if (action === "redeem") return keyModal("modal:redeem", "Redeem key");
+          if (action === "resethwid") return keyModal("modal:resethwid", "Reset device lock");
+          if (action === "check") return keyModal("modal:check", "Check key status");
+          if (action === "getkey") {
+            const { data: sc } = await db.from("scripts").select("id, name, getkey_enabled, enabled, moderation_disabled").eq("id", sid ?? "").maybeSingle();
+            if (!sc || !sc.enabled || sc.moderation_disabled) return reply("This script is currently unavailable.");
+            if (!sc.getkey_enabled) return reply("Free keys aren't available for this script. Contact the seller to buy a key.");
+            return reply(`🔑 Complete the checkpoints to get a free key for **${sc.name}**:`, [{ type: 1, components: [{ type: 2, style: 5, label: "Get key", url: `${new URL(request.url).origin}/getkey/${sc.id}` }] }]);
+          }
+          return reply("Unknown button.");
+        }
+        // Modal submits map onto the slash command handlers
+        if (i.type === 5) {
+          name = String(i.data?.custom_id ?? "").replace("modal:", "");
+          const v = i.data?.components?.[0]?.components?.[0]?.value;
+          opts = { key: String(v ?? "") };
+        }
         const key = String(opts["key"] ?? "").trim().slice(0, 128);
         const origin = new URL(request.url).origin;
         const guild: string | undefined = i.guild_id;
@@ -42,6 +67,15 @@ export const Route = createFileRoute("/api/public/discord")({
           const sn = (lic.scripts as unknown as { name?: string } | null)?.name ?? "Script";
           const exp = lic.expires_at ? `<t:${Math.floor(new Date(lic.expires_at).getTime() / 1000)}:R>` : "never";
           return reply(`✅ **${sn}** — valid, expires ${exp}, device ${lic.hwid ? "locked" : "not locked yet"}\n\`\`\`lua\nscript_key = "${key}"\nloadstring(game:HttpGet("${origin}/api/public/loader/${lic.script_id}"))()\n\`\`\``);
+        }
+
+        if (name === "check") {
+          const { data: lic } = await db.from("license_keys").select("banned, expires_at, hwid, scripts(name)").eq("key", key).maybeSingle();
+          if (!lic) return reply("❌ Key not found.");
+          const sn = (lic.scripts as unknown as { name?: string } | null)?.name ?? "Script";
+          const expired = !!lic.expires_at && new Date(lic.expires_at) < new Date();
+          const exp = lic.expires_at ? `<t:${Math.floor(new Date(lic.expires_at).getTime() / 1000)}:R>` : "never";
+          return reply(`**${sn}** — ${lic.banned ? "⛔ banned" : expired ? "⌛ expired" : "✅ valid"}\nExpires: ${exp}\nDevice: ${lic.hwid ? "locked" : "not locked yet"}`);
         }
 
         if (name === "resethwid") {
@@ -71,6 +105,31 @@ export const Route = createFileRoute("/api/public/discord")({
         if (!link) return reply("This server isn't linked. Run /link with the code from your dashboard.");
         const { data: owned } = await db.from("scripts").select("id, name").eq("owner_id", link.user_id);
         const ids = (owned ?? []).map((s) => s.id);
+
+        if (name === "panel") {
+          const sname = String(opts["script"] ?? "").trim().toLowerCase();
+          const sc = (owned ?? []).find((s) => s.name.toLowerCase() === sname);
+          if (!sc) return reply(`❌ No script named that. Your scripts: ${(owned ?? []).map((s) => s.name).join(", ") || "none"}`);
+          return Response.json({ type: 4, data: {
+            embeds: [{
+              title: String(opts["title"] ?? `${sc.name} — Key Panel`).slice(0, 256),
+              description: String(opts["description"] ?? "Use the buttons below to get, redeem or manage your key.").slice(0, 2000),
+              color: 0x22c55e,
+              fields: [
+                { name: "🔑 Get key", value: "Get a free key through the checkpoints", inline: true },
+                { name: "✅ Redeem key", value: "Get your loader script", inline: true },
+                { name: "🔄 Reset HWID", value: "Move your key to a new device", inline: true },
+                { name: "🔎 Check key", value: "See status and expiry", inline: true },
+              ],
+              footer: { text: "Powered by Vault" },
+            }],
+            components: [{ type: 1, components: [
+              btn("Get key", `panel:getkey:${sc.id}`, 1), btn("Redeem key", "panel:redeem", 3),
+              btn("Reset HWID", "panel:resethwid"), btn("Check key", "panel:check"),
+            ] }],
+            allowed_mentions: { parse: [] },
+          } });
+        }
 
         if (name === "genkey") {
           const sname = String(opts["script"] ?? "").trim().toLowerCase();
