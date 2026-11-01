@@ -992,6 +992,9 @@ function DiscordPanel() {
             <code>/resethwid key</code> — buyer resets device lock
           </li>
           <li>
+            <code>/panel script [title] [description]</code> — admin: post a key panel with Get key / Redeem / Reset HWID / Check key buttons
+          </li>
+          <li>
             <code>/genkey script [note] [days]</code> — admin: generate a key
           </li>
           <li>
