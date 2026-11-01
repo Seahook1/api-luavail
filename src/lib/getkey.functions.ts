@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { hostingAllowed } from "@/lib/moderation";
+import { checkpointToken, isBypassReferrer } from "@/lib/getkey-token";
 
-const MIN_SECONDS = 10; // must spend at least this long on the ad link before returning
+const MIN_SECONDS = 15; // must spend at least this long on the ad link before returning
 const uuid = (v: unknown) =>
   String(v ?? "")
     .replace(/[^a-f0-9-]/gi, "")
@@ -80,10 +81,12 @@ export const beginCheckpoint = createServerFn({ method: "POST" })
 
 // Called when the ad link sends the buyer back with ?cp=N.
 export const completeCheckpoint = createServerFn({ method: "POST" })
-  .inputValidator((d: { scriptId: string; sessionId: string; cp: number }) => ({
+  .inputValidator((d: { scriptId: string; sessionId: string; cp: number; t?: string | undefined; ref?: string | undefined }) => ({
     scriptId: uuid(d?.scriptId),
     sessionId: uuid(d?.sessionId),
     cp: Math.floor(Number(d?.cp) || 0),
+    t: String(d?.t ?? "").replace(/[^a-f0-9]/gi, "").slice(0, 64),
+    ref: String(d?.ref ?? "").slice(0, 500),
   }))
   .handler(async ({ data }) => {
     const sc = await loadScript(data.scriptId);
@@ -98,8 +101,17 @@ export const completeCheckpoint = createServerFn({ method: "POST" })
     if (s.key) return { message: "" };
     if (data.cp !== s.step + 1 || !s.step_started_at)
       return { message: "Complete the checkpoints in order." };
+    const bypassFail = async (why: string) => {
+      // Anti-bypass: wipe progress so the buyer must start over.
+      await sb.from("getkey_sessions").update({ step: 0, step_started_at: null }).eq("id", s.id);
+      return { message: `⚠ Bypass detected (${why}). Your progress was reset — complete the checkpoints normally.` };
+    };
+    if (isBypassReferrer(data.ref)) return bypassFail("bypass site");
+    const { data: own } = await sb.from("scripts").select("owner_id").eq("id", data.scriptId).single();
+    if (!own || data.t !== (await checkpointToken(data.scriptId, own.owner_id, data.cp)))
+      return bypassFail("invalid checkpoint link");
     if (Date.now() - new Date(s.step_started_at).getTime() < MIN_SECONDS * 1000)
-      return { message: "Checkpoint not completed. Finish the link, then come back." };
+      return bypassFail("finished too fast");
     const step = s.step + 1;
     let key: string | null = null;
     if (step >= sc.checkpoints.length) {
