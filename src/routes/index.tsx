@@ -11,6 +11,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { registerDiscordCommands, getBotInvite } from "@/lib/discord.functions";
 import { createApiKey } from "@/lib/apikeys.functions";
+import { checkpointToken } from "@/lib/getkey-token";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search: Record<string, unknown>): { tab: "scripts" | "discord" | "api" } => ({
