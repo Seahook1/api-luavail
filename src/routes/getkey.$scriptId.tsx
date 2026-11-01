@@ -5,7 +5,7 @@ import { getKeyStatus, beginCheckpoint, completeCheckpoint } from "@/lib/getkey.
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/getkey/$scriptId")({
-  validateSearch: (s: Record<string, unknown>) => ({ cp: s['cp'] ? Number(s['cp']) : undefined }),
+  validateSearch: (s: Record<string, unknown>) => ({ cp: s['cp'] ? Number(s['cp']) : undefined, t: s['t'] ? String(s['t']) : undefined }),
   head: () => ({
     meta: [
       { title: "Get a Free Key — Vault" },
@@ -23,7 +23,7 @@ type St = Awaited<ReturnType<typeof getKeyStatus>>;
 
 function GetKey() {
   const { scriptId } = Route.useParams();
-  const { cp } = Route.useSearch();
+  const { cp, t } = Route.useSearch();
   const status = useServerFn(getKeyStatus);
   const begin = useServerFn(beginCheckpoint);
   const complete = useServerFn(completeCheckpoint);
@@ -36,7 +36,7 @@ function GetKey() {
     (async () => {
       let sessionId = localStorage.getItem(storeKey) ?? undefined;
       if (cp && sessionId) {
-        const r = await complete({ data: { scriptId, sessionId, cp } });
+        const r = await complete({ data: { scriptId, sessionId, cp, t, ref: document.referrer } });
         setMsg(r.message);
         window.history.replaceState(null, "", window.location.pathname);
       }

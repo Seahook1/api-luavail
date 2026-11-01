@@ -11,6 +11,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { registerDiscordCommands, getBotInvite } from "@/lib/discord.functions";
 import { createApiKey } from "@/lib/apikeys.functions";
+import { checkpointToken } from "@/lib/getkey-token";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search: Record<string, unknown>): { tab: "scripts" | "discord" | "api" } => ({
@@ -846,10 +847,8 @@ function ScriptPanel({
             .filter((l) => l.trim())
             .map((_, i) => (
               <div key={i} className="text-muted-foreground">
-                Checkpoint {i + 1} return URL:{" "}
-                <code>
-                  {origin}/getkey/{script.id}?cp={i + 1}
-                </code>
+                Checkpoint {i + 1} redirect link (paste into your ad provider):{" "}
+                <ReturnUrl scriptId={script.id} cp={i + 1} origin={origin} />
               </div>
             ))}
         </div>
@@ -1005,5 +1004,20 @@ function DiscordPanel() {
         </p>
       </div>
     </div>
+  );
+}
+
+function ReturnUrl({ scriptId, cp, origin }: { scriptId: string; cp: number; origin: string }) {
+  const { user } = useAppSession();
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    if (user) void checkpointToken(scriptId, user.id, cp).then((t) => setUrl(`${origin}/getkey/${scriptId}?cp=${cp}&t=${t}`));
+  }, [user, scriptId, cp, origin]);
+  if (!url) return <span>…</span>;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <code className="break-all">{url}</code>
+      <button type="button" className="underline text-primary" onClick={() => { void navigator.clipboard.writeText(url); toast.success("Redirect link copied"); }}>Copy</button>
+    </span>
   );
 }
