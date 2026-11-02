@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { obfuscateLua } from "@/lib/obfuscate";
 import { sendDiscordAlert } from "@/lib/discord-commands";
 import { hostingAllowed } from "@/lib/moderation";
+import { isBrowserNavigation, browserBlockedPage } from "@/lib/browser-page";
 
 // Always 200 so Roblox HttpGet doesn't throw; the loader reads the --ERR: prefix.
 const err = (m: string, _status = 200) =>
@@ -19,7 +20,9 @@ export const Route = createFileRoute("/api/public/fetch")({
         if (/curl|python|wget|Postman|axios|node-fetch|undici/i.test(ua))
           return err("Access denied");
         const u = new URL(request.url);
-        const s = u.searchParams.get("s") ?? "";
+        const s = (u.searchParams.get("s") ?? "").replace(/[^a-f0-9-]/gi, "");
+        if (isBrowserNavigation(request))
+          return browserBlockedPage(`${u.origin}/api/public/loader/${s}`);
         const k = (u.searchParams.get("k") ?? "").slice(0, 128);
         const h = (u.searchParams.get("h") ?? "").slice(0, 256);
         if (!s || !h) return err("Missing HWID", 400);

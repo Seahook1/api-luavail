@@ -7,6 +7,9 @@ export const Route = createFileRoute("/api/public/loader/$scriptId")({
       GET: async ({ request, params }) => {
         const id = params.scriptId.replace(/[^a-f0-9-]/gi, "");
         const origin = new URL(request.url).origin;
+        const { isBrowserNavigation, browserBlockedPage } = await import("@/lib/browser-page");
+        if (isBrowserNavigation(request))
+          return browserBlockedPage(`${origin}/api/public/loader/${id}`);
         const lua = `local k = (getgenv and getgenv().script_key) or script_key or ""
 local h = (gethwid and gethwid()) or game:GetService("RbxAnalyticsService"):GetClientId()
 local hs = game:GetService("HttpService")
