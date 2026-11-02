@@ -10,7 +10,8 @@ export const Route = createFileRoute("/api/public/loader/$scriptId")({
         const lua = `local k = (getgenv and getgenv().script_key) or script_key or ""
 local h = (gethwid and gethwid()) or game:GetService("RbxAnalyticsService"):GetClientId()
 local hs = game:GetService("HttpService")
-local r = game:HttpGet("${origin}/api/public/fetch?s=${id}&k="..hs:UrlEncode(k).."&h="..hs:UrlEncode(h))
+local ok, r = pcall(function() return game:HttpGet("${origin}/api/public/fetch?s=${id}&k="..hs:UrlEncode(k).."&h="..hs:UrlEncode(h)) end)
+if not ok then return warn("[Vault] request failed: "..tostring(r)) end
 if r:sub(1,6) == "--ERR:" then return warn("[Vault] "..r:sub(7)) end
 local f, e = loadstring(r)
 if not f then return warn("[Vault] load failed") end
