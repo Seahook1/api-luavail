@@ -3,9 +3,10 @@ import { obfuscateLua } from "@/lib/obfuscate";
 import { sendDiscordAlert } from "@/lib/discord-commands";
 import { hostingAllowed } from "@/lib/moderation";
 
-const err = (m: string, status = 403) =>
+// Always 200 so Roblox HttpGet doesn't throw; the loader reads the --ERR: prefix.
+const err = (m: string, _status = 200) =>
   new Response(`--ERR:${m}`, {
-    status,
+    status: 200,
     headers: { "content-type": "text/plain", "cache-control": "no-store" },
   });
 
@@ -14,8 +15,8 @@ export const Route = createFileRoute("/api/public/fetch")({
     handlers: {
       GET: async ({ request }) => {
         const ua = request.headers.get("user-agent") ?? "";
-        // Block normal web browsers from pulling the source directly.
-        if (/Mozilla|Chrome|Safari|curl|python|wget|Postman|axios|node/i.test(ua))
+        // Block obvious scraping tools; executors (incl. mobile WebKit ones) are allowed.
+        if (/curl|python|wget|Postman|axios|node-fetch|undici/i.test(ua))
           return err("Access denied");
         const u = new URL(request.url);
         const s = u.searchParams.get("s") ?? "";
