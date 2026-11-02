@@ -1,41 +1,66 @@
 import { describe, it, expect } from "vitest";
+import { spawnSync } from "node:child_process";
 import { obfuscateLua } from "@/lib/obfuscate";
 
-function decode(out: string): string {
-  const data = /local \S+="([^"]*)"/.exec(out)?.[1];
-  const nums = /\((\d+)\+\S+\*(\d+)\+\(\S+%7\)\*(\d+)\)%256/.exec(out);
-  if (data === undefined || !nums) throw new Error("Invalid wrapper");
-  const [k1, k2, k3] = [Number(nums[1]), Number(nums[2]), Number(nums[3])];
-  const bytes = [...data.matchAll(/\\(\d{3})/g)].map((m, idx) => {
-    const i = idx + 1;
-    const key = (k1 + i * k2 + (i % 7) * k3) % 256;
-    return (Number(m[1]) - key + 256) % 256;
+function execute(wrapper: string, prelude = "") {
+  const result = spawnSync("lua", ["-"], {
+    input: `${prelude}\nlocal result=(function(...)\n${wrapper}\nend)("argument")\nif result ~= nil then print(result) end`,
+    encoding: "utf8",
+    timeout: 5000,
   });
-  return new TextDecoder().decode(new Uint8Array(bytes));
+  if (result.error) throw result.error;
+  return result;
 }
 
 describe("obfuscateLua", () => {
-  const src = 'print("secret key é 😀")\nlocal x = 1';
-  it("hides the plain source", () => {
-    const out = obfuscateLua(src);
+  it("hides source strings and source variable names", () => {
+    const out = obfuscateLua('local sensitiveVariable="secret key é 😀"; return sensitiveVariable');
     expect(out).not.toContain("secret");
-    expect(out).not.toContain("print");
+    expect(out).not.toContain("sensitiveVariable");
   });
-  it("round-trips through the decoder", () => {
-    expect(decode(obfuscateLua(src))).toBe(src);
+  it("executes Unicode source and preserves return values in Lua", () => {
+    const result = execute(obfuscateLua('return "secret key é 😀"'));
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("secret key é 😀");
   });
-  it("differs on every call", () => {
-    expect(obfuscateLua(src)).not.toBe(obfuscateLua(src));
+  it("preserves varargs and handles empty source", () => {
+    expect(execute(obfuscateLua("return ...")).stdout.trim()).toBe("argument");
+    expect(execute(obfuscateLua("")).status).toBe(0);
   });
-  it("preserves loader URLs, key lookup, and error handling through obfuscation", () => {
+  it("randomizes both names and ciphertext on every call", () => {
+    const first = obfuscateLua('return "test"');
+    const second = obfuscateLua('return "test"');
+    expect(first).not.toBe(second);
+    expect(first.match(/local (_v\w+)/)?.[1]).not.toBe(second.match(/local (_v\w+)/)?.[1]);
+  });
+  it("rejects modified ciphertext before running the source", () => {
+    const out = obfuscateLua('print("PAYLOAD_EXECUTED")');
+    const damaged = out.replace(
+      /\\(\d{3})/,
+      (_, digits: string) => `\\${String((Number(digits) + 1) % 256).padStart(3, "0")}`,
+    );
+    expect(damaged).not.toBe(out);
+    const result = execute(damaged);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("integrity check failed");
+    expect(result.stdout).not.toContain("PAYLOAD_EXECUTED");
+  });
+  it("preserves loader requests and readable server errors", () => {
     const loader = `local k = (getgenv and getgenv().script_key) or script_key or ""
 local ok, r = pcall(function() return game:HttpGet("https://api-luavail.lovable.app/api/public/fetch?s=test&k="..k) end)
 if not ok then return warn("[Vault] request failed: "..tostring(r)) end
 if r:sub(1,6) == "--ERR:" then return warn("[Vault] "..r:sub(7)) end
 return loadstring(r)()`;
     const out = obfuscateLua(loader);
-    expect(out).not.toContain("api-luavail.lovable.app");
     expect(out).not.toContain("script_key");
-    expect(decode(out)).toBe(loader);
+    expect(out).not.toContain("api-luavail.lovable.app");
+    const result = execute(
+      out,
+      `script_key="TEST_KEY"
+game={HttpGet=function(self,url) assert(url=="https://api-luavail.lovable.app/api/public/fetch?s=test&k=TEST_KEY"); return "--ERR:Invalid key" end}
+warn=print`,
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("[Vault] Invalid key");
   });
 });
