@@ -1,6 +1,6 @@
 // Portable Lua 5.1/Luau wrapper. This is obfuscation, not a security boundary:
 // the decoder and its keys must be delivered to the client along with the code.
-const randomInt = (max: number) => crypto.getRandomValues(new Uint32Array(1))[0] % max;
+const randomInt = (max: number) => (crypto.getRandomValues(new Uint32Array(1))[0] ?? 0) % max;
 
 export function obfuscateLua(source: string): string {
   let serial = 0;

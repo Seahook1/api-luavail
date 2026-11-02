@@ -12,3 +12,4 @@
 - Keep primary tabs in the shared root shell and select dashboard panels through validated URL search parameters so navigation works from every page and survives refreshes.
 - Admin moderation uses authenticated database RPCs with server-validated roles, not browser email checks or broad owner policies; this keeps all-script access isolated from owner dashboards.
 - Keep administrative suspension separate from seller enablement and check both on delivery and free-key flows so sellers and API clients cannot bypass moderation.
+- Keep Lua protection in the shared portable obfuscator, with Lua execution and integrity regression tests; client-side obfuscation is not an authorization boundary.
