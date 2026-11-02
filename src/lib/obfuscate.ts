@@ -5,16 +5,28 @@ const randomInt = (max: number) => (crypto.getRandomValues(new Uint32Array(1))[0
 export function obfuscateLua(source: string): string {
   let serial = 0;
   const name = () => `_v${randomInt(0xffffff).toString(16)}_${serial++}`;
-  const data = name(), output = name(), index = name(), byte = name();
-  const previous = name(), decoded = name(), sum = name(), weighted = name();
-  const fn = name(), message = name(), joined = name();
-  const char = name(), read = name(), concat = name(), compile = name();
+  const data = name(),
+    output = name(),
+    index = name(),
+    byte = name();
+  const previous = name(),
+    decoded = name(),
+    sum = name(),
+    weighted = name();
+  const fn = name(),
+    message = name(),
+    joined = name();
+  const char = name(),
+    read = name(),
+    concat = name(),
+    compile = name();
   const seed = randomInt(256);
   const step = randomInt(255) + 1;
   const salt = randomInt(256);
   const initial = randomInt(256);
   let feedback = initial;
-  let a = 1, b = 0;
+  let a = 1,
+    b = 0;
   const encoded: number[] = [];
   const bytes = new TextEncoder().encode(source);
   bytes.forEach((value, offset) => {
@@ -28,11 +40,17 @@ export function obfuscateLua(source: string): string {
   const chunks: string[] = [];
   const chunkSize = 48 + randomInt(49);
   for (let offset = 0; offset < encoded.length; offset += chunkSize) {
-    chunks.push(`"${encoded.slice(offset, offset + chunkSize).map(value => `\\${String(value).padStart(3, "0")}`).join("")}"`);
+    chunks.push(
+      `"${encoded
+        .slice(offset, offset + chunkSize)
+        .map((value) => `\\${String(value).padStart(3, "0")}`)
+        .join("")}"`,
+    );
   }
   // Bounded, isolated junk has no side effects and does not touch executor APIs.
   const junk = Array.from({ length: 3 + randomInt(4) }, () => {
-    const accumulator = name(), cursor = name();
+    const accumulator = name(),
+      cursor = name();
     return `do local ${accumulator}=${randomInt(65521)} for ${cursor}=1,${3 + randomInt(8)} do ${accumulator}=(${accumulator}*${3 + randomInt(19)}+${cursor})%65521 end end`;
   });
   return [

@@ -35,7 +35,10 @@ describe("obfuscateLua", () => {
   });
   it("rejects modified ciphertext before running the source", () => {
     const out = obfuscateLua('print("PAYLOAD_EXECUTED")');
-    const damaged = out.replace(/\\(\d{3})/, (_, digits: string) => `\\${String((Number(digits) + 1) % 256).padStart(3, "0")}`);
+    const damaged = out.replace(
+      /\\(\d{3})/,
+      (_, digits: string) => `\\${String((Number(digits) + 1) % 256).padStart(3, "0")}`,
+    );
     expect(damaged).not.toBe(out);
     const result = execute(damaged);
     expect(result.status).not.toBe(0);
@@ -51,9 +54,12 @@ return loadstring(r)()`;
     const out = obfuscateLua(loader);
     expect(out).not.toContain("script_key");
     expect(out).not.toContain("api-luavail.lovable.app");
-    const result = execute(out, `script_key="TEST_KEY"
+    const result = execute(
+      out,
+      `script_key="TEST_KEY"
 game={HttpGet=function(self,url) assert(url=="https://api-luavail.lovable.app/api/public/fetch?s=test&k=TEST_KEY"); return "--ERR:Invalid key" end}
-warn=print`);
+warn=print`,
+    );
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe("[Vault] Invalid key");
   });
