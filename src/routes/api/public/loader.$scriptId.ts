@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { obfuscateLua } from "@/lib/obfuscate";
 
-// Returns a tiny Lua loader. It never contains the real script source.
+// Obfuscate the bootstrap on every request; the hosted source stays behind fetch authorization.
 export const Route = createFileRoute("/api/public/loader/$scriptId")({
   server: {
     handlers: {

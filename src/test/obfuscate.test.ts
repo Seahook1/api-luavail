@@ -27,4 +27,15 @@ describe("obfuscateLua", () => {
   it("differs on every call", () => {
     expect(obfuscateLua(src)).not.toBe(obfuscateLua(src));
   });
+  it("preserves loader URLs, key lookup, and error handling through obfuscation", () => {
+    const loader = `local k = (getgenv and getgenv().script_key) or script_key or ""
+local ok, r = pcall(function() return game:HttpGet("https://api-luavail.lovable.app/api/public/fetch?s=test&k="..k) end)
+if not ok then return warn("[Vault] request failed: "..tostring(r)) end
+if r:sub(1,6) == "--ERR:" then return warn("[Vault] "..r:sub(7)) end
+return loadstring(r)()`;
+    const out = obfuscateLua(loader);
+    expect(out).not.toContain("api-luavail.lovable.app");
+    expect(out).not.toContain("script_key");
+    expect(decode(out)).toBe(loader);
+  });
 });
