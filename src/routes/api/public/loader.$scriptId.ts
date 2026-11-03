@@ -20,7 +20,7 @@ if r:sub(1,6) == "--ERR:" then return warn("[Vault] "..r:sub(7)) end
 local f, e = loadstring(r)
 if not f then return warn("[Vault] load failed") end
 return f()`;
-        return new Response(`-- Do not save this file. Always use the loadstring.\n${obfuscateLua(lua)}`, {
+        return new Response(`-- Do not save this file. Always use the loadstring.\n${obfuscateLua(lua, 2)}`, {
           headers: { "content-type": "text/plain", "cache-control": "no-store" },
         });
       },

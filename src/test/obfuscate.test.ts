@@ -63,4 +63,19 @@ warn=print`,
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe("[Vault] Invalid key");
   });
+  it("runs correctly through two wrapping layers and rejects damage to either", () => {
+    const out = obfuscateLua('print("LAYERED_OK")', 2);
+    expect(execute(out).stdout.trim()).toBe("LAYERED_OK");
+    const damaged = out.replace(
+      /\\(\d{3})/,
+      (_, digits: string) => `\\${String((Number(digits) + 1) % 256).padStart(3, "0")}`,
+    );
+    const result = execute(damaged);
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain("LAYERED_OK");
+  });
+  it("round-trips a large script without exceeding Lua limits", () => {
+    const big = Array.from({ length: 2000 }, (_, i) => `x=${i} t=(t or 0)+x`).join("\n") + "\nprint(t)";
+    expect(execute(obfuscateLua(big)).stdout.trim()).toBe("1999000");
+  });
 });
