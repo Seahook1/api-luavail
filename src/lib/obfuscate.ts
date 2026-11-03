@@ -813,7 +813,7 @@ function emitLua(vm: CompiledVM): string {
     _oa=_bxor(_oa,${V.code}[_ci][1])
     _oa=(_oa*16777619)%4294967296
   end
-  if _oa~=${vm.opcodeHmacU32}then error("${rndHex(12)}")end
+  if _oa~=${vm.opcodeHmacU32} then error("${rndHex(12)}")end
 end`;
 
   // L2: Poly1305 fold pre-check
@@ -824,7 +824,7 @@ end`;
   for _ci=1,#${V.data} do
     _pa=(_pa*257+string.byte(${V.data},_ci))%4294967296
   end
-  if _pa~=${polyFold>>>0}then error("${rndHex(12)}")end
+  if _pa~=${polyFold>>>0} then error("${rndHex(12)}")end
 end`;
 
   // L11: Key split
