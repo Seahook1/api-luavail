@@ -20,7 +20,6 @@
 //   L4  4-canary register system (mixed each iteration, checked at exit)
 //   L5  Metamorphic junk hydra (fake CF, opaque predicates, meta-nops)
 //   L6  Opcode-map FNV fold (verifies dispatch table at VM boot)
-//   L7  FNV-1a 64-bit source self-hash (two-pass, Lua-native re-hash)
 //   L8  Timing tripwire (os.clock() monotone check; detects step-debugging)
 //   L9  Environment fingerprint (runtime sanity — detects stripped VMs)
 //   L10 Integrity accumulator (running hash of all decoded bytes)
@@ -720,9 +719,8 @@ function emitLua(vm: CompiledVM): string {
     ra:      nm.gen(), rb:     nm.gen(), k:       nm.gen(), k2:     nm.gen(),
     aux:     nm.gen(), tmp:    nm.gen(), res:     nm.gen(),
     times:   nm.gen(), thresh: nm.gen(), envOk:  nm.gen(),
-    intAcc:  nm.gen(), polyAcc:nm.gen(), selfAcc: nm.gen(),
+    intAcc:  nm.gen(), polyAcc:nm.gen(), 
     kp0: nm.gen(), kp1: nm.gen(), kp2: nm.gen(),
-    shExp: nm.gen(),
   };
 
   const Ra    = `${V.regs}[${V.ra}+1]`;
@@ -833,24 +831,6 @@ end`;
   const k2 = luaBytes(vm.cipherKey.slice(22));
   const keyLines = `local ${V.kp0}=${k0}\nlocal ${V.kp1}=${k1}\nlocal ${V.kp2}=${k2}\nlocal _hk=${V.kp0}..${V.kp1}..${V.kp2}`;
 
-  // L7: Self-hash (two-pass)
-  const SH_PLACEHOLDER = rndHex(16);
-  const selfHashSnippet = `local ${V.selfAcc}={lo=2166136261,hi=0}
-local function _fnvstep(lo,hi,b)
-  lo=_bxor(lo,b)
-  local nlo=(lo*16777619)%4294967296
-  local carry=math.floor(lo*16777619/4294967296)
-  local nhi=(hi*16777619+carry)%4294967296
-  return nlo,nhi
-end
-if debug and debug.getinfo then
-  local _src=(debug.getinfo(1,"S")or{}).source or ""
-  local _lo,_hi=${V.selfAcc}.lo,${V.selfAcc}.hi
-  for _ci=1,#_src do _lo,_hi=_fnvstep(_lo,_hi,string.byte(_src,_ci))end
-  local ${V.shExp}=tonumber("${SH_PLACEHOLDER}",16)
-  if _lo~=${V.shExp}%4294967296 then error("${rndHex(12)}")end
-end`;
-
   // VM interpreter function
   const vmFn = `local function ${V.vmFn}(${V.data})
   local ${V.regs}={}
@@ -896,7 +876,6 @@ end`;
     BIT_SHIM,
     emitTimingTripwire(V.times, V.thresh),
     emitEnvFingerprint(V.envOk),
-    selfHashSnippet,
     keyLines,
     opcodeHmacLine,
     polyCheckLine,
@@ -908,11 +887,7 @@ end`;
     boot,
   ].join("\n");
 
-  // Second-pass: real self-hash substitution
-  const srcBytes = new TextEncoder().encode(firstPass);
-  const [fnvLo] = fnv1a64split(srcBytes);
-  const realHash = (fnvLo >>> 0).toString(16).padStart(8, "0") + rndHex(8);
-  return firstPass.replace(SH_PLACEHOLDER, realHash);
+  return firstPass;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -928,67 +903,4 @@ export async function obfuscateLua(source: string, passes = 1): Promise<string> 
     cur         = emitLua(vm);
   }
   return cur;
-}
-
-// ── CLI ───────────────────────────────────────────────────────────────────────
-const isCLI =
-  (typeof process !== "undefined" && !!process.argv[1] && process.argv[1]!.endsWith("obfuscate.ts")) ||
-  (typeof Deno !== "undefined");
-
-if (isCLI) {
-  const args = typeof process !== "undefined" ? process.argv.slice(2) : (Deno as typeof Deno).args;
-
-  if (args.length === 0 || args.includes("--help")) {
-    console.error([
-      "obfuscateLua v3 — military-grade Lua obfuscator (single-file build)",
-      "",
-      "Usage:",
-      "  bun run obfuscate.ts <input.lua> [output.lua] [--double] [--triple]",
-      "  deno run --allow-read --allow-write obfuscate.ts <input.lua> [output.lua] [--double] [--triple]",
-      "",
-      "Flags:",
-      "  --double    Two obfuscation passes (nested VMs)",
-      "  --triple    Three passes (maximum paranoia)",
-      "  --help      This message",
-      "",
-      "Anti-tamper layers (13):",
-      "  L1  ChaCha20 encryption     L8  Timing tripwire",
-      "  L2  Poly1305 MAC            L9  Environment fingerprint",
-      "  L3  Fletcher-32 integrity   L10 Integrity accumulator",
-      "  L4  4-canary system         L11 Key split",
-      "  L5  Junk hydra              L12 Full instance randomisation",
-      "  L6  Opcode-map FNV fold     L13 Multi-pass wrapping",
-      "  L7  FNV-64 self-hash",
-    ].join("\n"));
-    if (typeof process !== "undefined") process.exit(0);
-  }
-
-  const passes    = args.includes("--triple") ? 3 : args.includes("--double") ? 2 : 1;
-  const positional = args.filter(a => !a.startsWith("--"));
-  const inPath    = positional[0];
-  const outPath   = positional[1] ?? inPath?.replace(/\.lua$/, ".obf.lua");
-
-  if (!inPath || !outPath) {
-    console.error("Error: no input file specified");
-    if (typeof process !== "undefined") process.exit(1);
-  }
-
-  let src: string;
-  let writeFile: (path: string, data: string) => void;
-
-  if (typeof process !== "undefined") {
-    const fs  = await import("node:fs");
-    src       = fs.readFileSync(inPath!, "utf8");
-    writeFile = (p, d) => fs.writeFileSync(p, d, "utf8");
-  } else {
-    src       = await (Deno as typeof Deno).readTextFile(inPath!);
-    writeFile = (p, d) => (Deno as typeof Deno).writeTextFileSync(p, d);
-  }
-
-  console.error(`[obfuscateLua] ${inPath} → ${outPath} (passes=${passes})`);
-  const t0     = Date.now();
-  const result = await obfuscateLua(src!, passes);
-  const dt     = Date.now() - t0;
-  writeFile(outPath!, result);
-  console.error(`[obfuscateLua] done in ${dt}ms  ${src!.length}b → ${result.length}b`);
 }
