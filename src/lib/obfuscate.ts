@@ -804,14 +804,18 @@ function emitLua(vm: CompiledVM): string {
   const constsLit = "{" + consts.map(String).join(",") + "}";
   const dataLit   = luaBytes(encoded);
 
-  // L6: opcode-map FNV fold
+  // L6: opcode-map FNV fold (over the physical opcodes actually emitted)
+  let opFold = 2166136261;
+  for (const ins of instrs) {
+    opFold = Math.imul((opFold ^ semToEnc.get(ins.op)!) >>> 0, 16777619) >>> 0;
+  }
   const opcodeHmacLine = `do
   local _oa=2166136261
   for _ci=1,#${V.code} do
     _oa=_bxor(_oa,${V.code}[_ci][1])
     _oa=((_oa%256)*16777216+_oa*403)%4294967296
   end
-  if _oa~=${vm.opcodeHmacU32} then error("${rndHex(12)}")end
+  if _oa~=${opFold} then error("${rndHex(12)}")end
 end`;
 
   // L2: Poly1305 fold pre-check
