@@ -34,7 +34,7 @@ function wrapOnce(source: string): string {
   const [data, output, index, byte, previous, decoded, sum, weighted, fn, message] = n as [
     string, string, string, string, string, string, string, string, string, string,
   ];
-  const [joined, char, read, concat, compile, state, clock, started, stream, check] = n.slice(10) as [
+  const [joined, char, read, concat, compile, state, clock, started, stream, _unused] = n.slice(10) as [
     string, string, string, string, string, string, string, string, string, string,
   ];
   const [wrapKey, wrapHash, decoy] = n.slice(20) as [string, string, string];
@@ -43,12 +43,6 @@ function wrapOnce(source: string): string {
   const step = randomInt(255) + 1;
   const initial = randomInt(256);
   const lcgSeed = randomInt(65535) + 1;
-  // Key material is split over several constants that are only combined at runtime.
-  const seedParts = [randomInt(1000), randomInt(1000)];
-  const seedExpr = `(${seedParts[0]}+${seedParts[1]}+${(seed - seedParts[0]! - seedParts[1]! + 2000) % 2000}+2000-2000)%256`;
-  // The expression above is only decoration; the real value is checked below.
-  const realSeedExpr = `${seed}`;
-
   const bytes = new TextEncoder().encode(source);
   const encoded: number[] = [];
   let feedback = initial;
@@ -105,7 +99,7 @@ function wrapOnce(source: string): string {
       `for ${index}=1,#${data} do`,
       `${stream}=(${stream}*75+74)%65537`,
       `local ${byte}=${read}(${data},${index})`,
-      `local ${decoded}=(${byte}-(${stream}%256+${realSeedExpr}+${index}*${step}+${previous}))%256`,
+      `local ${decoded}=(${byte}-(${stream}%256+${seed}+${index}*${step}+${previous}))%256`,
       `${previous}=${byte}`,
       `${sum}=(${sum}+${decoded})%65521`,
       `${weighted}=(${weighted}+${sum})%65521`,
@@ -141,15 +135,13 @@ function wrapOnce(source: string): string {
     `local ${data}=${concat}({${chunks.join(",")}})`,
     `local ${output},${previous},${sum},${weighted}={},${initial},1,0`,
     `local ${joined},${fn},${message}`,
-    `local ${check}=${seedExpr}`,
     `local ${state}=${sInit}`,
     `while true do`,
     body,
     `end`,
     `end`,
   ]
-    .join("\n")
-    .replace(/\nend\nend$/, "\nend\nend");
+    .join("\n");
 }
 
 // passes > 1 wraps the already-wrapped chunk again, so a cracker must unwrap each layer.
