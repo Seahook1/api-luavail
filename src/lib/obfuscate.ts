@@ -809,7 +809,7 @@ function emitLua(vm: CompiledVM): string {
   local _oa=2166136261
   for _ci=1,#${V.code} do
     _oa=_bxor(_oa,${V.code}[_ci][1])
-    _oa=(_oa*16777619)%4294967296
+    _oa=((_oa%256)*16777216+_oa*403)%4294967296
   end
   if _oa~=${vm.opcodeHmacU32} then error("${rndHex(12)}")end
 end`;
