@@ -106,7 +106,7 @@ describe("anti-tamper", () => {
   });
   it("a hooked pcall/error pair prevents decryption", () => {
     const out = obfuscateLua('print("PAYLOAD_EXECUTED")', 2);
-    const result = execute(out, "local oe=error\nerror=function(m,l) return oe(m,l) end\nlocal op=pcall\npcall=function(f,...) local r={op(f,...)} if f==oe then return true,\"x\" end return unpack(r) end");
+    const result = execute(out, "local oe=error\nerror=function(m,l) return oe(m,l) end\nlocal op=pcall\npcall=function(f,...) local r={op(f,...)} if f==error then return true,\"x\" end return unpack(r) end");
     expect(result.stdout).not.toContain("PAYLOAD_EXECUTED");
   });
   it("runs through four layers", () => {
