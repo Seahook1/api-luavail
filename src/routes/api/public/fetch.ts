@@ -1,149 +1,97 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { obfuscateLua } from "@/lib/obfuscate";
-import { sendDiscordAlert } from "@/lib/discord-commands";
-import { hostingAllowed } from "@/lib/moderation";
-import { isBrowserNavigation, browserBlockedPage } from "@/lib/browser-page";
+// src/routes/api/public/fetch.ts
+import { createFileRoute } from '@tanstack/react-router'
+import { supabaseAdmin } from '~/lib/supabase-admin' // service‑role client
 
-// Always 200 so Roblox HttpGet doesn't throw; the loader reads the --ERR: prefix.
-const err = (m: string, _status = 200) =>
-  new Response(`--ERR:${m}`, {
-    status: 200,
-    headers: { "content-type": "text/plain", "cache-control": "no-store" },
-  });
-
-export const Route = createFileRoute("/api/public/fetch")({
+export const Route = createFileRoute('/api/public/fetch')({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const ua = request.headers.get("user-agent") ?? "";
-        // Block obvious scraping tools; executors (incl. mobile WebKit ones) are allowed.
-        if (/curl|python|wget|Postman|axios|node-fetch|undici/i.test(ua))
-          return err("Access denied");
-        const u = new URL(request.url);
-        const s = (u.searchParams.get("s") ?? "").replace(/[^a-f0-9-]/gi, "");
-        if (isBrowserNavigation(request))
-          return browserBlockedPage(`${u.origin}/api/public/loader/${s}`);
-        const k = (u.searchParams.get("k") ?? "").slice(0, 128);
-        const h = (u.searchParams.get("h") ?? "").slice(0, 256);
-        if (!s || !h) return err("Missing HWID", 400);
+        try {
+          // ── 1. Extract token ──────────────────────────────────────
+          const url = new URL(request.url)
+          const token = url.searchParams.get('token')
+          if (!token) {
+            return new Response('--ERR:Missing token', { status: 200 })
+          }
 
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const ip =
-          request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? null;
-        const { data: sc } = await supabaseAdmin
-          .from("scripts")
-          .select("enabled, moderation_disabled, keyless, name, discord_webhook")
-          .eq("id", s)
-          .maybeSingle();
-        if (!sc) return err("Script not found", 404);
-        if (!hostingAllowed(sc)) return err("Script hosting is disabled");
-        if (sc.keyless) {
-          const log = async (result: string) => {
-            await supabaseAdmin
-              .from("execution_logs")
-              .insert({ script_id: s, key_id: null, key_note: "keyless", result, ip });
-            await sendDiscordAlert(
-              sc.discord_webhook,
-              `${result === "ok" ? "✅" : "⚠️"} **${sc.name}** · ${result} · keyless · IP ${ip ?? "?"}`,
-            );
-          };
-          if (!sc.enabled) {
-            await log("script disabled");
-            return err("Script is temporarily disabled by the seller");
-          }
-          if (ip) {
-            const { count } = await supabaseAdmin
-              .from("execution_logs")
-              .select("id", { count: "exact", head: true })
-              .eq("script_id", s)
-              .eq("ip", ip)
-              .eq("result", "ok")
-              .gte("created_at", new Date(Date.now() - 60_000).toISOString());
-            if ((count ?? 0) >= 10) {
-              await log("rate limited");
-              return err("Too many runs, wait a minute", 429);
-            }
-          }
-          await log("ok");
-        } else {
-          if (!k) return err("Missing key", 400);
-          const { data: lic } = await supabaseAdmin
-            .from("license_keys")
-            .select("id, hwid, banned, expires_at, script_id, note")
-            .eq("key", k)
-            .eq("script_id", s)
-            .maybeSingle();
-          const log = async (result: string) => {
-            await supabaseAdmin
-              .from("execution_logs")
-              .insert({
-                script_id: s,
-                key_id: lic?.id ?? null,
-                key_note: lic?.note ?? null,
-                result,
-                ip,
-              });
-            await sendDiscordAlert(
-              sc.discord_webhook,
-              `${result === "ok" ? "✅" : "⚠️"} **${sc.name}** · ${result} · ${lic?.note ?? "unknown buyer"} · IP ${ip ?? "?"}`,
-            );
-          };
-          if (!lic) {
-            await log("invalid key");
-            return err("Invalid key");
-          }
-          if (!sc.enabled) {
-            await log("script disabled");
-            return err("Script is temporarily disabled by the seller");
-          }
-          if (lic.banned) {
-            await log("banned");
-            return err("Key is banned");
-          }
-          if (lic.expires_at && new Date(lic.expires_at) < new Date()) {
-            await log("expired");
-            return err("Key expired");
-          }
-          if (lic.hwid && lic.hwid !== h) {
-            await log("hwid mismatch");
-            return err("HWID mismatch - reset it on the buyer portal");
-          }
-          // Rate limit: max 10 runs per key per minute (stops key sharing / dumping loops)
-          const { count } = await supabaseAdmin
-            .from("execution_logs")
-            .select("id", { count: "exact", head: true })
-            .eq("key_id", lic.id)
-            .eq("result", "ok")
-            .gte("created_at", new Date(Date.now() - 60_000).toISOString());
-          if ((count ?? 0) >= 10) {
-            await log("rate limited");
-            return err("Too many runs, wait a minute", 429);
-          }
-          await log("ok");
+          // ── 2. Look up the token ──────────────────────────────────
+          const { data: row, error: lookupErr } = await supabaseAdmin
+            .from('execution_tokens')
+            .select(
+              'id, script_id, key_id, hwid, ip, expires_at, consumed',
+            )
+            .eq('token', token)
+            .maybeSingle()
 
-          await supabaseAdmin
-            .from("license_keys")
-            .update({ hwid: lic.hwid ?? h, last_used_at: new Date().toISOString() })
-            .eq("id", lic.id);
+          if (lookupErr || !row) {
+            return new Response('--ERR:Token expired or already used', {
+              status: 200,
+            })
+          }
+
+          // ── 3. Validate freshness & consumption ───────────────────
+          if (row.consumed || new Date(row.expires_at) < new Date()) {
+            return new Response('--ERR:Token expired or already used', {
+              status: 200,
+            })
+          }
+
+          // ── 4. Mark consumed (atomic update) ──────────────────────
+          const { error: consumeErr } = await supabaseAdmin
+            .from('execution_tokens')
+            .update({ consumed: true })
+            .eq('id', row.id)
+            .eq('consumed', false) // guard against double‑spend
+
+          if (consumeErr) {
+            console.error('consume token error:', consumeErr)
+            return new Response('--ERR:Failed to consume token', {
+              status: 200,
+            })
+          }
+
+          // ── 5. Fetch the script source ─────────────────────────────
+          const { data: script, error: scriptErr } = await supabaseAdmin
+            .from('scripts')
+            .select('id, source, obfuscated_source, version')
+            .eq('id', row.script_id)
+            .maybeSingle()
+
+          if (scriptErr || !script) {
+            return new Response('--ERR:Script not found', { status: 200 })
+          }
+
+          const payload = script.obfuscated_source ?? script.source
+          if (!payload) {
+            return new Response('--ERR:No payload available', {
+              status: 200,
+            })
+          }
+
+          // ── 6. Increment execution counter ────────────────────────
+          await supabaseAdmin.rpc('increment_execution_count', {
+            p_script_id: row.script_id,
+          }).catch((err) => console.error('counter RPC error:', err))
+
+          // ── 7. Write execution log ────────────────────────────────
+          await supabaseAdmin.from('execution_logs').insert({
+            script_id: row.script_id,
+            key_id: row.key_id,
+            hwid: row.hwid,
+            ip: row.ip,
+            executed_at: new Date().toISOString(),
+          }).catch((err) => console.error('log insert error:', err))
+
+          // ── 8. Return Lua payload ─────────────────────────────────
+          return new Response(payload, {
+            status: 200,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          })
+        } catch (err) {
+          console.error('fetch fatal:', err)
+          return new Response('--ERR:Internal server error', { status: 200 })
         }
-
-        const { data: script } = await supabaseAdmin
-          .from("scripts")
-          .select("source, executions")
-          .eq("id", s)
-          .eq("moderation_disabled", false)
-          .eq("enabled", true)
-          .maybeSingle();
-        if (!script) return err("Script not found", 404);
-        await supabaseAdmin
-          .from("scripts")
-          .update({ executions: script.executions + 1 })
-          .eq("id", s);
-
-        return new Response(obfuscateLua(script.source), {
-          headers: { "content-type": "text/plain", "cache-control": "no-store" },
-        });
       },
     },
   },
-});
+})
