@@ -59,7 +59,7 @@ function Redeem() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <Link to="/" search={{ tab: "scripts" }} className="font-bold text-lg">
+        <Link to="/" search={{ tab: "home" }} className="font-bold text-lg">
           Vault
         </Link>
         <span className="text-sm text-muted-foreground">Buyer portal</span>

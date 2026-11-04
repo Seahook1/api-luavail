@@ -1,6 +1,7 @@
 import { Link, useLocation } from "@tanstack/react-router";
 
 const TABS = [
+  { id: "home", label: "Home" },
   { id: "scripts", label: "Scripts" },
   { id: "discord", label: "Discord" },
   { id: "api", label: "API keys" },
@@ -13,7 +14,7 @@ export function AppTabs() {
   const params = new URLSearchParams(location.searchStr);
   const active: TabId | "buyer" | "admin" | null =
     location.pathname === "/"
-      ? ((params.get("tab") as TabId) ?? "scripts")
+      ? ((params.get("tab") as TabId) ?? "home")
       : location.pathname === "/admin"
         ? "admin"
         : location.pathname === "/redeem"
