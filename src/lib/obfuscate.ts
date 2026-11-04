@@ -60,7 +60,8 @@ function wrapOnce(source: string): string {
 
   // ── keys & payload ───────────────────────────────────────────────────────
   const keyBytes = Array.from({ length: 32 }, () => rngRange(256));
-  const seed = (keyBytes[0]! * 16777216 + keyBytes[1]! * 65536 + keyBytes[2]! * 256 + keyBytes[3]!) % M;
+  const seed =
+    (keyBytes[0]! * 16777216 + keyBytes[1]! * 65536 + keyBytes[2]! * 256 + keyBytes[3]!) % M;
   const plain = new TextEncoder().encode(source);
 
   const sbox = Array.from({ length: 256 }, (_, i) => i);
@@ -340,7 +341,11 @@ function wrapOnce(source: string): string {
   const CHUNK = 48 + rngRange(48);
   const chunks: string[] = [];
   for (let off = 0; off < cipher.length; off += CHUNK)
-    chunks.push(`"${Array.from(cipher.slice(off, off + CHUNK)).map(luaByte).join("")}"`);
+    chunks.push(
+      `"${Array.from(cipher.slice(off, off + CHUNK))
+        .map(luaByte)
+        .join("")}"`,
+    );
 
   // The decoder S (hashes its own encrypted inputs into nHH for tamper-keyed derivation).
   const head = [

@@ -39,7 +39,8 @@ describe("obfuscateLua", () => {
   });
   it("never leaks library names or the failure message in plain text", () => {
     const out = obfuscateLua('return "x"');
-    for (const word of ["loadstring", "pcall", "integrity", "floor", "byte"]) expect(out).not.toContain(word);
+    for (const word of ["loadstring", "pcall", "integrity", "floor", "byte"])
+      expect(out).not.toContain(word);
   });
   it("rejects modified ciphertext before running the source", () => {
     const out = obfuscateLua('print("PAYLOAD_EXECUTED")');
@@ -83,13 +84,15 @@ warn=print`,
     expect(result.stdout).not.toContain("LAYERED_OK");
   });
   it("round-trips a large script without exceeding Lua limits", () => {
-    const big = Array.from({ length: 2000 }, (_, i) => `x=${i} t=(t or 0)+x`).join("\n") + "\nprint(t)";
+    const big =
+      Array.from({ length: 2000 }, (_, i) => `x=${i} t=(t or 0)+x`).join("\n") + "\nprint(t)";
     expect(execute(obfuscateLua(big)).stdout.trim()).toBe("1999000");
   });
 });
 
 describe("anti-tamper", () => {
-  const damage = (out: string, re: RegExp) => out.replace(re, (m) => (m === "0" ? "1" : String(Number(m) + 1)));
+  const damage = (out: string, re: RegExp) =>
+    out.replace(re, (m) => (m === "0" ? "1" : String(Number(m) + 1)));
   it("a changed encrypted constant changes the key and the payload never runs", () => {
     const out = obfuscateLua('print("PAYLOAD_EXECUTED")');
     const damaged = out.replace(/\(\{(\d+),/, (_m, n: string) => `({${(Number(n) + 1) % 256},`);
@@ -100,19 +103,26 @@ describe("anti-tamper", () => {
   });
   it("a hooked string.byte (environment tamper) prevents decryption", () => {
     const out = obfuscateLua('print("PAYLOAD_EXECUTED")');
-    const result = execute(out, "local ob=string.byte\nstring.byte=function(s,i,j) if s==\"A\" then return 66 end return ob(s,i,j) end");
+    const result = execute(
+      out,
+      'local ob=string.byte\nstring.byte=function(s,i,j) if s=="A" then return 66 end return ob(s,i,j) end',
+    );
     expect(result.status).not.toBe(0);
     expect(result.stdout).not.toContain("PAYLOAD_EXECUTED");
   });
   it("a hooked pcall/error pair prevents decryption", () => {
     const out = obfuscateLua('print("PAYLOAD_EXECUTED")', 2);
-    const result = execute(out, "local oe=error\nerror=function(m,l) return oe(m,l) end\nlocal op=pcall\npcall=function(f,...) local r={op(f,...)} if f==error then return true,\"x\" end return unpack(r) end");
+    const result = execute(
+      out,
+      'local oe=error\nerror=function(m,l) return oe(m,l) end\nlocal op=pcall\npcall=function(f,...) local r={op(f,...)} if f==error then return true,"x" end return unpack(r) end',
+    );
     expect(result.stdout).not.toContain("PAYLOAD_EXECUTED");
   });
   it("runs through four layers", () => {
     expect(execute(obfuscateLua('print("FOUR_OK")', 4)).stdout.trim()).toBe("FOUR_OK");
   });
   it("is stable across many random builds", () => {
-    for (let i = 0; i < 25; i++) expect(execute(obfuscateLua(`print(${i})`, 2)).stdout.trim()).toBe(String(i));
+    for (let i = 0; i < 25; i++)
+      expect(execute(obfuscateLua(`print(${i})`, 2)).stdout.trim()).toBe(String(i));
   });
 });

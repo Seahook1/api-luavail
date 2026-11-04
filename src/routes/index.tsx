@@ -17,7 +17,9 @@ import { HomePanel } from "@/components/home-panel";
 import { LuaFilePicker } from "@/components/lua-file-picker";
 
 export const Route = createFileRoute("/")({
-  validateSearch: (search: Record<string, unknown>): { tab: "home" | "scripts" | "discord" | "api" } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { tab: "home" | "scripts" | "discord" | "api" } => ({
     tab:
       search["tab"] === "discord" || search["tab"] === "api" || search["tab"] === "scripts"
         ? search["tab"]
@@ -1030,7 +1032,8 @@ function DiscordPanel() {
             <code>/resethwid key</code> — buyer resets device lock
           </li>
           <li>
-            <code>/panel script [title] [description]</code> — admin: post a key panel with Get key / Redeem / Reset HWID / Check key buttons
+            <code>/panel script [title] [description]</code> — admin: post a key panel with Get key
+            / Redeem / Reset HWID / Check key buttons
           </li>
           <li>
             <code>/genkey script [note] [days]</code> — admin: generate a key
@@ -1052,13 +1055,25 @@ function ReturnUrl({ scriptId, cp, origin }: { scriptId: string; cp: number; ori
   const { user } = useAppSession();
   const [url, setUrl] = useState("");
   useEffect(() => {
-    if (user) void checkpointToken(scriptId, user.id, cp).then((t) => setUrl(`${origin}/getkey/${scriptId}?cp=${cp}&t=${t}`));
+    if (user)
+      void checkpointToken(scriptId, user.id, cp).then((t) =>
+        setUrl(`${origin}/getkey/${scriptId}?cp=${cp}&t=${t}`),
+      );
   }, [user, scriptId, cp, origin]);
   if (!url) return <span>…</span>;
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       <code className="break-all">{url}</code>
-      <button type="button" className="underline text-primary" onClick={() => { void navigator.clipboard.writeText(url); toast.success("Redirect link copied"); }}>Copy</button>
+      <button
+        type="button"
+        className="underline text-primary"
+        onClick={() => {
+          void navigator.clipboard.writeText(url);
+          toast.success("Redirect link copied");
+        }}
+      >
+        Copy
+      </button>
     </span>
   );
 }
