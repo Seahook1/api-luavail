@@ -1,149 +1,115 @@
-// src/routes/api/public/session/init.ts
 import { createFileRoute } from '@tanstack/react-router'
 import { getRequestIP } from '@tanstack/react-start/server'
 import { randomBytes } from 'node:crypto'
-import { supabaseAdmin } from '~/lib/supabase-admin' // your service‑role client
+import { supabaseAdmin } from '~/lib/supabase-admin'
 
-// In‑memory rate‑limit store (replace with Redis in production)
 const RATE_WINDOW_MS = 30_000
 const MAX_INIT_PER_WINDOW = 5
 const rateBuckets = new Map<string, { count: number; windowStart: number }>()
 
 function isRateLimited(key: string): boolean {
   const now = Date.now()
-  const bucket = rateBuckets.get(key)
-  if (!bucket || now - bucket.windowStart > RATE_WINDOW_MS) {
-    rateBuckets.set(key, { count: 1, windowStart: now })
-    return false
+  const b = rateBuckets.get(key)
+  if (!b || now - b.windowStart > RATE_WINDOW_MS) {
+    rateBuckets.set(key, { count: 1, windowStart: now }); return false
   }
-  if (bucket.count >= MAX_INIT_PER_WINDOW) return true
-  bucket.count += 1
-  return false
+  if (b.count >= MAX_INIT_PER_WINDOW) return true
+  b.count += 1; return false
 }
+
+const fail = (msg: string) => new Response(`--ERR:${msg}`, { status: 200 })
 
 async function handleInit(request: Request): Promise<Response> {
   try {
-    // ── 1. Parse parameters (GET or POST) ────────────────────────────
-    let scriptId: string | null = null
-    let licenseKey: string | null = null
-    let hwid: string | null = null
-
+    let scriptId: string | null = null, licenseKey: string | null = null, hwid: string | null = null
     if (request.method === 'GET') {
-      const url = new URL(request.url)
-      scriptId = url.searchParams.get('s')
-      licenseKey = url.searchParams.get('k')          // optional
-      hwid = url.searchParams.get('h')
+      const u = new URL(request.url)
+      scriptId = u.searchParams.get('s')
+      licenseKey = u.searchParams.get('k')
+      hwid = u.searchParams.get('h')
     } else {
-      const body = await request.json().catch(() => ({}))
-      scriptId = body.script_id ?? body.s ?? null
-      licenseKey = body.key ?? body.k ?? null
-      hwid = body.hwid ?? body.h ?? null
+      const b = await request.json().catch(() => ({}))
+      scriptId = b.script_id ?? b.s ?? null
+      licenseKey = b.key ?? b.k ?? null
+      hwid = b.hwid ?? b.h ?? null
     }
+    if (!scriptId || !hwid) return fail('Missing script_id or hwid')
 
-    if (!scriptId || !hwid) {
-      return new Response('--ERR:Missing script_id or hwid', { status: 200 })
-    }
+    const ip = getRequestIP({ xForwardedFor: true }) ?? 'unknown'
+    if (isRateLimited(`${ip}:${hwid}`)) return fail('Rate limit exceeded')
 
-    // ── 2. Rate limiting ────────────────────────────────────────────
-    const ip = getRequestIP({ xForwardedFor: true }) ?? 'unknown' // [reference:5]
-    const rateKey = `${ip}:${hwid}`
-    if (isRateLimited(rateKey)) {
-      return new Response('--ERR:Rate limit exceeded (max 5 per 30s)', { status: 200 })
-    }
+    // ── Ban check ────────────────────────────────────────────────
+    const { data: banned } = await supabaseAdmin
+      .from('banned_hwids').select('hwid').eq('hwid', hwid).maybeSingle()
+    if (banned) return fail('HWID is banned')
 
-    // ── 3. Validate script ──────────────────────────────────────────
-    const { data: script, error: scriptErr } = await supabaseAdmin
+    // ── Script check ─────────────────────────────────────────────
+    const { data: script } = await supabaseAdmin
       .from('scripts')
       .select('id, enabled, moderation_disabled, keyless')
-      .eq('id', scriptId)
-      .maybeSingle()
+      .eq('id', scriptId).maybeSingle()
+    if (!script) return fail('Script not found')
+    if (!script.enabled || script.moderation_disabled) return fail('Script is disabled or moderated')
 
-    if (scriptErr || !script) {
-      return new Response('--ERR:Script not found', { status: 200 })
-    }
-    if (!script.enabled || script.moderation_disabled) {
-      return new Response('--ERR:Script is disabled or moderated', { status: 200 })
-    }
-
-    // ── 4. Validate license key (unless keyless) ────────────────────
     let keyId: string | null = null
 
+    // ── Key check ────────────────────────────────────────────────
     if (!script.keyless) {
-      if (!licenseKey) {
-        return new Response('--ERR:Missing license key', { status: 200 })
-      }
-
-      const { data: keyRow, error: keyErr } = await supabaseAdmin
+      if (!licenseKey) return fail('Missing license key')
+      const { data: k } = await supabaseAdmin
         .from('license_keys')
-        .select('id, banned, expires_at, hwid')
-        .eq('script_id', scriptId)
-        .eq('key', licenseKey)
-        .maybeSingle()
+        .select('id, banned, expires_at, hwid, last_rebind_at, max_concurrent_sessions')
+        .eq('script_id', scriptId).eq('key', licenseKey).maybeSingle()
+      if (!k) return fail('Invalid license key')
+      if (k.banned) return fail('License key is banned')
+      if (k.expires_at && new Date(k.expires_at) < new Date()) return fail('License key has expired')
 
-      if (keyErr || !keyRow) {
-        return new Response('--ERR:Invalid license key', { status: 200 })
-      }
-      if (keyRow.banned) {
-        return new Response('--ERR:License key is banned', { status: 200 })
-      }
-      if (keyRow.expires_at && new Date(keyRow.expires_at) < new Date()) {
-        return new Response('--ERR:License key has expired', { status: 200 })
-      }
-
-      // HWID binding
-      if (!keyRow.hwid) {
-        // First run → bind HWID
-        const { error: bindErr } = await supabaseAdmin
-          .from('license_keys')
-          .update({ hwid })
-          .eq('id', keyRow.id)
-        if (bindErr) {
-          return new Response('--ERR:Failed to bind HWID', { status: 200 })
+      if (!k.hwid) {
+        await supabaseAdmin.from('license_keys').update({ hwid }).eq('id', k.id)
+      } else if (k.hwid !== hwid) {
+        if (k.last_rebind_at && Date.now() - new Date(k.last_rebind_at).getTime() < 24 * 3600_000) {
+          return fail('HWID rebind cooldown (24h)')
         }
-      } else if (keyRow.hwid !== hwid) {
-        return new Response('--ERR:HWID mismatch', { status: 200 })
+        await supabaseAdmin.from('license_keys')
+          .update({ hwid, last_rebind_at: new Date().toISOString() })
+          .eq('id', k.id)
       }
 
-      keyId = keyRow.id
+      const { count } = await supabaseAdmin
+        .from('execution_tokens')
+        .select('id', { count: 'exact', head: true })
+        .eq('key_id', k.id).eq('consumed', true).eq('revoked', false)
+        .gt('session_expires_at', new Date().toISOString())
+      if ((count ?? 0) >= (k.max_concurrent_sessions ?? 1)) {
+        return fail('Max concurrent sessions reached')
+      }
+      keyId = k.id
     }
 
-    // ── 5. Generate a 64‑character cryptographically secure token ──
-    const token = randomBytes(32).toString('hex') // 64 hex chars [reference:6]
+    // ── Mint token + canary ──────────────────────────────────────
+    const token  = randomBytes(32).toString('hex')
+    const canary = randomBytes(8).toString('hex')   // 16 hex chars
 
-    // ── 6. Insert the ephemeral token (30‑second TTL) ──────────────
-    const { error: insertErr } = await supabaseAdmin
-      .from('execution_tokens')
-      .insert({
-        token,
-        script_id: scriptId,
-        key_id: keyId,
-        hwid,
-        ip,
-        expires_at: new Date(Date.now() + 30_000).toISOString(),
-        consumed: false,
-      })
-
-    if (insertErr) {
-      console.error('execution_tokens insert error:', insertErr)
-      return new Response('--ERR:Internal error creating token', { status: 200 })
-    }
-
-    // ── 7. Return the token (plain text) ────────────────────────────
-    return new Response(token, {
-      status: 200,
-      headers: { 'Content-Type': 'text/plain' },
+    const { error: insErr } = await supabaseAdmin.from('execution_tokens').insert({
+      token, script_id: scriptId, key_id: keyId, hwid, ip,
+      canary,
+      expires_at: new Date(Date.now() + 30_000).toISOString(),
     })
-  } catch (err) {
-    console.error('session/init fatal:', err)
-    return new Response('--ERR:Internal server error', { status: 200 })
+    if (insErr) return fail('Internal error creating token')
+
+    return new Response(JSON.stringify({ token, canary }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch (e) {
+    console.error('session/init fatal:', e)
+    return fail('Internal server error')
   }
 }
 
 export const Route = createFileRoute('/api/public/session/init')({
-  server: {
-    handlers: {
-      GET: async ({ request }) => handleInit(request),
-      POST: async ({ request }) => handleInit(request),
-    },
-  },
+  server: { handlers: {
+    GET:  ({ request }) => handleInit(request),
+    POST: ({ request }) => handleInit(request),
+  }},
 })
