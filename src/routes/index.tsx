@@ -12,10 +12,18 @@ import { useServerFn } from "@tanstack/react-start";
 import { registerDiscordCommands, getBotInvite } from "@/lib/discord.functions";
 import { createApiKey } from "@/lib/apikeys.functions";
 import { checkpointToken } from "@/lib/getkey-token";
+import { lovable } from "@/integrations/lovable";
+import { HomePanel } from "@/components/home-panel";
+import { LuaFilePicker } from "@/components/lua-file-picker";
 
 export const Route = createFileRoute("/")({
-  validateSearch: (search: Record<string, unknown>): { tab: "scripts" | "discord" | "api" } => ({
-    tab: search["tab"] === "discord" || search["tab"] === "api" ? search["tab"] : "scripts",
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { tab: "home" | "scripts" | "discord" | "api" } => ({
+    tab:
+      search["tab"] === "discord" || search["tab"] === "api" || search["tab"] === "scripts"
+        ? search["tab"]
+        : "home",
   }),
   head: () => ({
     meta: [
@@ -68,6 +76,7 @@ type Key = {
 function Index() {
   const { user: session, ready } = useAppSession();
   const queryClient = useQueryClient();
+  const { tab } = Route.useSearch();
   const signOut = async () => {
     await queryClient.cancelQueries();
     queryClient.clear();
@@ -86,7 +95,15 @@ function Index() {
           )}
         </div>
       </header>
-      {!ready ? null : session ? <Dashboard /> : <Auth />}
+      {!ready ? null : tab === "home" ? (
+        <div className="mx-auto max-w-6xl px-6">
+          <HomePanel signedIn={!!session} />
+        </div>
+      ) : session ? (
+        <Dashboard />
+      ) : (
+        <Auth />
+      )}
     </div>
   );
 }
@@ -95,6 +112,12 @@ function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"in" | "up">("in");
+  const google = async () => {
+    const result = await lovable.auth.signInWithOAuth("google", {
+      redirect_uri: window.location.origin,
+    });
+    if (result.error) toast.error(result.error.message ?? "Google sign-in failed");
+  };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const { error } =
@@ -132,6 +155,14 @@ function Auth() {
         />
         <Button type="submit" className="w-full">
           {mode === "in" ? "Sign in" : "Create account"}
+        </Button>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="h-px flex-1 bg-border" />
+          or
+          <span className="h-px flex-1 bg-border" />
+        </div>
+        <Button type="button" variant="outline" className="w-full" onClick={google}>
+          Continue with Google
         </Button>
         <button
           type="button"
@@ -257,6 +288,12 @@ function NewScriptForm({
         onChange={(e) => setName(e.target.value)}
         required
         maxLength={100}
+      />
+      <LuaFilePicker
+        onLoaded={(text, fileName) => {
+          setSource(text);
+          if (!name.trim()) setName(fileName.replace(/\.(lua|luau|txt)$/i, "").slice(0, 100));
+        }}
       />
       <Textarea
         rows={14}
@@ -726,6 +763,9 @@ function ScriptPanel({
         <label className="text-sm text-muted-foreground">
           Protected source (Lua) — encrypted automatically every time it is served
         </label>
+        <div className="mt-1">
+          <LuaFilePicker onLoaded={(text) => setSource(text)} />
+        </div>
         <Textarea
           value={source}
           onChange={(e) => setSource(e.target.value)}
@@ -992,7 +1032,8 @@ function DiscordPanel() {
             <code>/resethwid key</code> — buyer resets device lock
           </li>
           <li>
-            <code>/panel script [title] [description]</code> — admin: post a key panel with Get key / Redeem / Reset HWID / Check key buttons
+            <code>/panel script [title] [description]</code> — admin: post a key panel with Get key
+            / Redeem / Reset HWID / Check key buttons
           </li>
           <li>
             <code>/genkey script [note] [days]</code> — admin: generate a key
@@ -1014,13 +1055,25 @@ function ReturnUrl({ scriptId, cp, origin }: { scriptId: string; cp: number; ori
   const { user } = useAppSession();
   const [url, setUrl] = useState("");
   useEffect(() => {
-    if (user) void checkpointToken(scriptId, user.id, cp).then((t) => setUrl(`${origin}/getkey/${scriptId}?cp=${cp}&t=${t}`));
+    if (user)
+      void checkpointToken(scriptId, user.id, cp).then((t) =>
+        setUrl(`${origin}/getkey/${scriptId}?cp=${cp}&t=${t}`),
+      );
   }, [user, scriptId, cp, origin]);
   if (!url) return <span>…</span>;
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       <code className="break-all">{url}</code>
-      <button type="button" className="underline text-primary" onClick={() => { void navigator.clipboard.writeText(url); toast.success("Redirect link copied"); }}>Copy</button>
+      <button
+        type="button"
+        className="underline text-primary"
+        onClick={() => {
+          void navigator.clipboard.writeText(url);
+          toast.success("Redirect link copied");
+        }}
+      >
+        Copy
+      </button>
     </span>
   );
 }
