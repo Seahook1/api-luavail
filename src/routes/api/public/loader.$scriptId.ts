@@ -1,96 +1,89 @@
-// src/routes/api/public/loader.$scriptId.ts
 import { createFileRoute } from '@tanstack/react-router'
 
 const API_BASE = 'https://api-luavail.lovable.app'
 
 export const Route = createFileRoute('/api/public/loader/$scriptId')({
-  server: {
-    handlers: {
-      GET: async ({ params }) => {
-        const scriptId = params.scriptId
-
-        const lua = `
-local SCRIPT_ID = "${scriptId}"
+  server: { handlers: { GET: async ({ params }) => {
+    const lua = `
+local SCRIPT_ID = "${params.scriptId}"
 local API_BASE  = "${API_BASE}"
 
-local function getParam(name)
-    local ok, val = pcall(function()
-        return game:GetService("Players").LocalPlayer:GetJoinData().TeleportData[name]
-    end)
-    if ok and val and val ~= "" then return val end
-    local genv = getgenv and getgenv() or {}
-    return genv[name] or ""
+local function getParam(n)
+  local ok, v = pcall(function()
+    return game:GetService("Players").LocalPlayer:GetJoinData().TeleportData[n]
+  end)
+  if ok and v and v ~= "" then return v end
+  local g = getgenv and getgenv() or {}
+  return g[n] or ""
 end
 
 local HWID = getParam("hwid")
 if HWID == "" then
-    local ok, id = pcall(function()
-        return game:GetService("RbxAnalyticsService"):GetClientId()
-    end)
-    HWID = ok and id or ""
+  local ok, id = pcall(function()
+    return game:GetService("RbxAnalyticsService"):GetClientId()
+  end)
+  HWID = ok and id or ""
 end
 local KEY = getParam("key")
 
--- ── Step 1: init session ──────────────────────────────────────────
-local initUrl = string.format(
-    "%s/api/public/session/init?s=%s&k=%s&h=%s",
-    API_BASE, SCRIPT_ID, KEY, HWID
-)
-
-local okInit, tokenOrErr = pcall(function()
-    return game:HttpGet(initUrl, true)
+-- ── Step 1: init ────────────────────────────────────────────────
+local okI, initResp = pcall(function()
+  return game:HttpGet(API_BASE .. "/api/public/session/init?s=" .. SCRIPT_ID .. "&k=" .. KEY .. "&h=" .. HWID, true)
 end)
+if not okI or type(initResp) ~= "string" then warn("[Loader] init network error"); return end
+if initResp:sub(1,5) == "--ERR" then warn("[Loader] " .. initResp); return end
 
-if not okInit then
-    warn("[Loader] Network error during session init")
-    return
-end
-
-if tokenOrErr:sub(1, 5) == "--ERR" then
-    warn("[Loader] " .. tokenOrErr)
-    return
-end
-
-local token = tokenOrErr
-
--- ── Step 2: fetch payload with the one‑time token ────────────────
-local fetchUrl = string.format(
-    "%s/api/public/fetch?token=%s",
-    API_BASE, token
-)
-
-local okFetch, payloadOrErr = pcall(function()
-    return game:HttpGet(fetchUrl, true)
+local okD, initData = pcall(function()
+  return game:GetService("HttpService"):JSONDecode(initResp)
 end)
-
-if not okFetch then
-    warn("[Loader] Network error during fetch")
-    return
+if not okD or type(initData) ~= "table" or not initData.token then
+  warn("[Loader] init response malformed"); return
 end
 
-if payloadOrErr:sub(1, 5) == "--ERR" then
-    warn("[Loader] " .. payloadOrErr)
-    return
+-- ── Step 2: fetch ────────────────────────────────────────────────
+local okF, fetchResp = pcall(function()
+  return game:HttpGet(API_BASE .. "/api/public/fetch?token=" .. initData.token, true)
+end)
+if not okF or type(fetchResp) ~= "string" then warn("[Loader] fetch network error"); return end
+if fetchResp:sub(1,5) == "--ERR" then warn("[Loader] " .. fetchResp); return end
+
+local okD2, fetchData = pcall(function()
+  return game:GetService("HttpService"):JSONDecode(fetchResp)
+end)
+if not okD2 or type(fetchData) ~= "table" or not fetchData.payload then
+  warn("[Loader] fetch response malformed"); return
 end
 
--- ── Step 3: execute the delivered Lua ────────────────────────────
-local chunk, loadErr = loadstring(payloadOrErr)
-if not chunk then
-    warn("[Loader] Failed to compile payload: " .. tostring(loadErr))
-    return
-end
+-- ── Step 3: run payload in a coroutine ──────────────────────────
+local fn, cerr = loadstring(fetchData.payload)
+if not fn then warn("[Loader] compile error: " .. tostring(cerr)); return end
 
-local okRun, runErr = pcall(chunk)
-if not okRun then
-    warn("[Loader] Runtime error: " .. tostring(runErr))
-end
+local co = coroutine.create(fn)
+local okRun, runErr = coroutine.resume(co)
+if not okRun then warn("[Loader] runtime: " .. tostring(runErr)); return end
+
+-- ── Step 4: heartbeat kill-switch ───────────────────────────────
+task.spawn(function()
+  local hbUrl   = API_BASE .. "/api/public/heartbeat?t=" .. fetchData.heartbeat_token
+  local interval = tonumber(fetchData.interval) or 30
+  while coroutine.status(co) ~= "dead" do
+    task.wait(interval)
+    local okH, hbResp = pcall(function() return game:HttpGet(hbUrl, true) end)
+    if not okH or type(hbResp) ~= "string" or hbResp:sub(1,5) == "--ERR" then
+      -- install a per-instruction error hook → payload dies on next opcode
+      pcall(function()
+        debug.sethook(co, function() error("__HEARTBEAT_LOST__") end, "", 1)
+      end)
+      warn("[Loader] Heartbeat lost; payload terminated")
+      return
+    end
+  end
+end)
 `
 
-        return new Response(lua, {
-          status: 200,
-          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-        })
-      },
-    },
-  },
+    return new Response(lua, {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    })
+  }}},
 })
