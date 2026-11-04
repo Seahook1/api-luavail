@@ -1,17 +1,29 @@
-// Lua 5.1 / Luau VM-based obfuscator — Luraph-style output.
-// Architecture: source → XOR stream-cipher encode → embed in a Lua VM interpreter
-// that decodes + loads the payload at runtime. The VM shell uses:
-//   · buffer API (Roblox-compatible: buffer.readu8/writeu8/create/len/copy/tostring)
-//   · RC4-derived keystream for per-byte XOR
-//   · XTEA-style block cipher on the keystream seed
-//   · Flattened state-machine dispatcher (randomly ordered, encrypted state IDs)
-//   · Opaque-predicate decoys (n*(n+1) always even — guard never fires)
-//   · Randomised variable names, chunked string literals
-//   · Multi-pass wrapping (each pass re-encrypts with fresh keys)
+// Portable Lua 5.1 / Luau obfuscator with layered anti-tamper.
+//
+// Each layer turns a Lua chunk into another Lua chunk that:
+//   · encrypts the payload with RC4 + a position-dependent LCG stream (additive, no bit32/buffer)
+//   · derives the cipher key from a hash of the ciphertext, of the decoder's own encrypted
+//     constants and of runtime environment self-tests. Editing the data, the constants or hooking
+//     core library functions silently changes the key, so decryption produces garbage
+//     (there is no single "if tampered" branch to patch out)
+//   · verifies a plaintext hash and fails with a generic error
+//   · hides every library / global name behind encrypted strings
+//   · runs as a shuffled state machine with opaque predicates, dead code and decoy states
+//   · uses randomised confusable identifiers (I, l, 1, O, 0)
+// Layers can be stacked; each gets fresh keys, names and state ids.
+//
+// Client-side protection can slow analysis but cannot be an authorization boundary: a determined
+// user can still hook loadstring and capture the final plaintext.
 
-const rng = () => (Math.random() * 0xffffffff) >>> 0;
-const rngRange = (max: number) =>
-  max <= 0 ? 0 : ((Math.random() * max) >>> 0) % max;
+const M = 4294967296;
+
+const rng = (): number => {
+  const a = new Uint32Array(1);
+  crypto.getRandomValues(a);
+  return a[0]!;
+};
+const rngRange = (max: number) => (max <= 0 ? 0 : rng() % max);
+const pick = <T>(arr: readonly T[]): T => arr[rngRange(arr.length)]!;
 
 const shuffle = <T>(arr: T[]): T[] => {
   const a = [...arr];
@@ -22,345 +34,349 @@ const shuffle = <T>(arr: T[]): T[] => {
   return a;
 };
 
-// Printable bytes stay raw; control bytes become \ddd escapes.
+// Printable bytes stay raw; everything else becomes a 3-digit \ddd escape.
 const luaByte = (b: number) =>
   b >= 32 && b <= 126 && b !== 34 && b !== 92
     ? String.fromCharCode(b)
     : `\\${String(b).padStart(3, "0")}`;
 
-// XTEA 1-round mix used to scramble keystream seeds.
-const xteaMix = (v: number, key: number[]): number => {
-  let sum = 0;
-  const delta = 0x9e3779b9 | 0;
-  for (let i = 0; i < 8; i++) {
-    sum = (sum + delta) >>> 0;
-    v =
-      (v + (((v << 4) ^ (v >>> 5)) + v) ^ (sum + key[(sum >>> 11) & 3]!)) >>>
-      0;
-  }
-  return v;
-};
-
-// RC4-KSA + PRGA encode.
-function rc4Encode(
-  bytes: Uint8Array,
-  key: Uint8Array
-): { cipher: Uint8Array; sbox: number[] } {
-  const S = Array.from({ length: 256 }, (_, i) => i);
-  let j = 0;
-  for (let i = 0; i < 256; i++) {
-    j = (j + S[i]! + key[i % key.length]!) & 0xff;
-    [S[i], S[j]] = [S[j]!, S[i]!];
-  }
-  const cipher = new Uint8Array(bytes.length);
-  let a = 0,
-    b = 0;
-  for (let n = 0; n < bytes.length; n++) {
-    a = (a + 1) & 0xff;
-    b = (b + S[a]!) & 0xff;
-    [S[a], S[b]] = [S[b]!, S[a]!];
-    cipher[n] = bytes[n]! ^ S[(S[a]! + S[b]!) & 0xff]!;
-  }
-  return { cipher, sbox: S };
-}
-
-// Adler-32 checksum.
-const adler32 = (bytes: Uint8Array): number => {
-  let a = 1,
-    b = 0;
-  for (const v of bytes) {
-    a = (a + v) % 65521;
-    b = (b + a) % 65521;
-  }
-  return ((b << 16) | a) >>> 0;
-};
+const mod = (n: number, m: number) => ((n % m) + m) % m;
+const roll = (h: number, v: number) => (h * 257 + v) % M;
 
 function wrapOnce(source: string): string {
-  // ── name pool ────────────────────────────────────────────────────────────
-  let serial = 0;
+  // ── identifiers ──────────────────────────────────────────────────────────
   const used = new Set<string>();
   const name = (): string => {
-    let id: string;
-    do {
-      id = `_${rng().toString(36)}_${serial++}`;
-    } while (used.has(id));
-    used.add(id);
-    return id;
+    for (;;) {
+      let id = pick(["I", "l", "_"]);
+      const len = 8 + rngRange(10);
+      for (let i = 0; i < len; i++) id += pick(["I", "l", "1", "O", "0", "_"]);
+      if (!used.has(id)) {
+        used.add(id);
+        return id;
+      }
+    }
   };
 
-  // ── derive keys ──────────────────────────────────────────────────────────
-  const xteaKey = [rng(), rng(), rng(), rng()];
-  const rc4Seed = rng();
-  const rc4KeyRaw = new Uint8Array(32);
-  let ks = rc4Seed;
-  for (let i = 0; i < 32; i++) {
-    ks = xteaMix(ks, xteaKey);
-    rc4KeyRaw[i] = ks & 0xff;
+  // ── keys & payload ───────────────────────────────────────────────────────
+  const keyBytes = Array.from({ length: 32 }, () => rngRange(256));
+  const seed = (keyBytes[0]! * 16777216 + keyBytes[1]! * 65536 + keyBytes[2]! * 256 + keyBytes[3]!) % M;
+  const plain = new TextEncoder().encode(source);
+
+  const sbox = Array.from({ length: 256 }, (_, i) => i);
+  {
+    let j = 0;
+    for (let i = 0; i < 256; i++) {
+      j = (j + sbox[i]! + keyBytes[i % 32]!) % 256;
+      [sbox[i], sbox[j]] = [sbox[j]!, sbox[i]!];
+    }
   }
-
-  // ── encode source ────────────────────────────────────────────────────────
-  const plainBytes = new TextEncoder().encode(source);
-  const checkPlain = adler32(plainBytes);
-  const { cipher } = rc4Encode(plainBytes, rc4KeyRaw);
-  const checkCipher = adler32(cipher);
-
-  // ── chunk cipher text into quoted string literals ─────────────────────
-  const CHUNK = 48 + rngRange(32);
-  const chunks: string[] = [];
-  for (let off = 0; off < cipher.length; off += CHUNK) {
-    chunks.push(
-      `"${Array.from(cipher.slice(off, off + CHUNK)).map(luaByte).join("")}"`
-    );
+  const cipher = new Uint8Array(plain.length);
+  let plainHash = 0;
+  {
+    let a = 0,
+      b = 0,
+      ls = seed;
+    for (let n = 0; n < plain.length; n++) {
+      a = (a + 1) % 256;
+      b = (b + sbox[a]!) % 256;
+      [sbox[a], sbox[b]] = [sbox[b]!, sbox[a]!];
+      const r = sbox[(sbox[a]! + sbox[b]!) % 256]!;
+      ls = (ls * 1664525 + 1013904223) % M;
+      const l = Math.floor(ls / 65536) % 256;
+      cipher[n] = (plain[n]! + r + l) % 256;
+      plainHash = roll(plainHash, plain[n]! + 1);
+    }
   }
+  let dataHash = 0;
+  for (const c of cipher) dataHash = roll(dataHash, c + 1);
 
-  // ── Lua variable names ───────────────────────────────────────────────────
-  const [
-    nData,
-    nBuf,
-    nLen,
-    nI,
-    nB,
-    nSbox,
-    nA,
-    nV,
-    nFn,
-    nErr,
-    nSrc,
-    nState,
-    nResult,
-    nDecoy,
-    nK0,
-    nK1,
-    nK2,
-    nK3,
-    nSeed,
-    nKstr,
-    nKbuf,
-    nTmp,
-    nChk,
-  ] = Array.from({ length: 23 }, name) as string[];
-
-  // ── XTEA constants embedded as runtime computation ───────────────────────
-  // Split each key word so it isn't a bare literal.
-  const embedU32 = (v: number): string => {
-    const lo = v & 0xffff;
-    const hi = (v >>> 16) & 0xffff;
-    return `(${hi}*65536+${lo})`;
+  // ── encrypted names / strings (mirrors decoder S in Lua) ─────────────────
+  let constHash = 0;
+  const encStr = (s: string): string => {
+    const k = 1 + rngRange(250);
+    const bytes = Array.from(new TextEncoder().encode(s));
+    const out = bytes.map((b, i) => (b + k + (i + 1) * 3) % 256);
+    for (const v of out) constHash = roll(constHash, v);
+    constHash = roll(constHash, k);
+    return `${nDec}({${out.join(",")}},${k})`;
   };
-  const kExprs = xteaKey.map(embedU32);
 
-  // ── Opaque-predicate junk (n*(n+1) is always even) ──────────────────────
+  const nCH = name(),
+    nG = name(),
+    nHH = name(),
+    nDec = name(),
+    nData = name(),
+    nState = name(),
+    nF = name(),
+    nP = name(),
+    nT = name(),
+    nH = name(),
+    nKS = name(),
+    nKB = name(),
+    nBox = name(),
+    nHP = name(),
+    nSTR = name(),
+    nSB = name(),
+    nSC = name(),
+    nLS = name(),
+    nER = name(),
+    nPC = name(),
+    nTY = name(),
+    nMSG = name(),
+    nDH = name();
+
+  // ── state ids ────────────────────────────────────────────────────────────
+  const ids = new Set<number>();
+  const sid = () => {
+    for (;;) {
+      const v = 100 + rngRange(900000);
+      if (!ids.has(v)) {
+        ids.add(v);
+        return v;
+      }
+    }
+  };
+  const ST = {
+    names: sid(),
+    env: sid(),
+    hash: sid(),
+    key: sid(),
+    ksa: sid(),
+    dec: sid(),
+    load: sid(),
+    run: sid(),
+    fail: sid(),
+    done: sid(),
+  };
+  const go = (id: number) => {
+    const x = rngRange(5000) + 1;
+    return `${nState}=${id + x}-${x}`;
+  };
+  const is = (id: number) => {
+    const x = rngRange(5000) + 1;
+    return `${nState}+${x}==${id + x}`;
+  };
+
+  // ── junk generators ──────────────────────────────────────────────────────
   const junk = (): string => {
-    const probe = rngRange(9000) + 2;
-    const acc = name();
-    return `do local ${acc}=0;if(${probe}*(${probe}+1))%2==1 then ${acc}=1 end end`;
+    const t = rngRange(4);
+    const p = rngRange(9000) + 2;
+    const a = name(),
+      b = name(),
+      c = name();
+    if (t === 0)
+      return `do local ${a}=${p} if (${a}*(${a}+1))%2==1 then ${nState}=${rngRange(999)} ${nER}(${nMSG},0) end end`;
+    if (t === 1)
+      return `if (${p}*${p}+${p})%2==1 then local function ${a}(${b},${c}) for ${name()}=1,${b} do ${c}=(${c}*${rngRange(97) + 3}+${rngRange(1000)})%${M} end return ${c} end ${a}(${rngRange(50)},${rngRange(9999)}) end`;
+    if (t === 2)
+      return `do local ${a},${b}=${rngRange(9999)},${rngRange(9999)} for ${c}=1,${rngRange(4) + 1} do ${a}=(${a}*${b}+${c})%${rngRange(60000) + 7} end end`;
+    return `if ${p}%${p}~=0 then local ${a}={${rngRange(99)},${rngRange(99)}} while true do ${a}[1]=${a}[1]+1 end end`;
   };
+  const junks = (n: number) => Array.from({ length: n }, junk).join("\n");
 
-  // ── State IDs for flattened dispatcher ───────────────────────────────────
-  const NUM_STATES = 10;
-  const statePool = shuffle(
-    Array.from({ length: 100 }, (_, i) => i + 11)
-  ).slice(0, NUM_STATES);
-  const [sInit, sKsa, sPrga, sVerify, sLoad, sRun, sFail, sXtea, sMkKey, sChkSum] =
-    statePool as [
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number
-    ];
+  // ── environment self-tests (T counts anomalies; 0 in a clean runtime) ────
+  // Known-answer checks on core functions — a hook that changes behaviour shifts the key.
+  const T_SALT = 104729;
+  const salt = rngRange(M);
 
-  // ── XOR-encrypted state transition values stored in a table ─────────────
-  // We pick a random byte mask and XOR each state ID, so they can't be read
-  // directly from the source. At runtime we XOR them back.
-  const mask = rngRange(255) + 1;
-  const encState = (id: number) => id ^ mask;
-  const nMask = name();
-  const nStates = name();
-  const stateEntries = [
-    sInit,
-    sKsa,
-    sPrga,
-    sVerify,
-    sLoad,
-    sRun,
-    sFail,
-    sXtea,
-    sMkKey,
-    sChkSum,
-  ]
-    .map((s, i) => `[${i + 1}]=${encState(s)}`)
-    .join(",");
+  // ── branches ─────────────────────────────────────────────────────────────
+  // NAMES: decode every global / library name. Order matters for constHash.
+  const names: string[] = [];
+  const decl = (v: string, s: string) => names.push(`${v}=${encStr(s)}`);
+  // The decoded strings are consumed below; keep them in dedicated locals.
+  const nS1 = name(), // "string"
+    nS2 = name(), // "byte"
+    nS3 = name(), // "char"
+    nS4 = name(), // "loadstring"
+    nS5 = name(), // "load"
+    nS6 = name(), // "error"
+    nS7 = name(), // "pcall"
+    nS8 = name(), // "type"
+    nS9 = name(), // "function"
+    nS10 = name(), // message
+    nS11 = name(), // "math"
+    nS12 = name(); // "floor"
+  decl(nS1, "string");
+  decl(nS2, "byte");
+  decl(nS3, "char");
+  decl(nS4, "loadstring");
+  decl(nS5, "load");
+  decl(nS6, "error");
+  decl(nS7, "pcall");
+  decl(nS8, "type");
+  decl(nS9, "function");
+  decl(nS10, "[Vault] integrity check failed");
+  decl(nS11, "math");
+  decl(nS12, "floor");
 
-  // ── Dispatcher branches ─────────────────────────────────────────────────
-  // Runtime decode: state = _states[k] XOR mask
-  const decodeState = (idx: number) =>
-    `bit32.bxor(${nStates}[${idx}],${nMask})`;
+  const H = mod(dataHash * 3 + constHash * 5 + 0 * T_SALT + salt, M);
+  const keyStored = keyBytes.map((kb, i) => {
+    const m = (H * (i + 1 + 13) + 40503) % M;
+    return (kb + (Math.floor(m / 256) % 256)) % 256;
+  });
 
-  // Helper: compare current state using encoded table lookup
-  const isSt = (idx: number) =>
-    `${nState}==${decodeState(idx)}`;
+  const nMath = name(),
+    nFloor = name();
 
   const branches: string[] = [
-    // ── sInit: validate data length & cipher checksum ──────────────────
+    // names
     [
-      `if ${isSt(1)} then`,
-      `  ${junk()}`,
-      `  local ${nChk}=0`,
-      `  for ${nI}=1,#${nData} do`,
-      `    local ${nB}=string.byte(${nData},${nI})`,
-      `    ${nChk}=(${nChk}*65521+${nB})%4294967296`,
-      `  end`,
-      `  if #${nData}~=${cipher.length} or ${nChk}~=${checkCipher} then`,
-      `    ${nState}=${decodeState(7)}`,  // sFail
-      `  else`,
-      `    ${nState}=${decodeState(8)}`,  // sXtea
-      `  end`,
+      `if ${is(ST.names)} then`,
+      junk(),
+      ...names.map((n) => `  ${n}`),
+      `  ${nSTR}=${nG}[${nS1}]`,
+      `  ${nSB}=${nSTR}[${nS2}]`,
+      `  ${nSC}=${nSTR}[${nS3}]`,
+      `  ${nLS}=${nG}[${nS4}] or ${nG}[${nS5}]`,
+      `  ${nER}=${nG}[${nS6}]`,
+      `  ${nPC}=${nG}[${nS7}]`,
+      `  ${nTY}=${nG}[${nS8}]`,
+      `  ${nMSG}=${nS10}`,
+      `  ${nMath}=${nG}[${nS11}]`,
+      `  ${nFloor}=${nMath}[${nS12}]`,
+      `  ${go(ST.env)}`,
       `end`,
     ].join("\n"),
-
-    // ── sXtea: derive RC4 key seed via XTEA ──────────────────────────
+    // env
     [
-      `if ${isSt(8)} then`,
-      `  ${junk()}`,
-      `  local ${nSeed}=${embedU32(rc4Seed)}`,
-      `  local ${nK0},${nK1},${nK2},${nK3}=${kExprs[0]},${kExprs[1]},${kExprs[2]},${kExprs[3]}`,
-      `  local _sum,_delta=0,${embedU32(0x9e3779b9)}`,
-      `  for _=1,8 do`,
-      `    _sum=(_sum+_delta)%4294967296`,
-      `    local _ki=_sum%4`,
-      `    local _kw=_ki==0 and ${nK0} or _ki==1 and ${nK1} or _ki==2 and ${nK2} or ${nK3}`,
-      `    local _r11=_sum%2048`,
-      `    local _kw2=math.floor(_sum/2048)%4`,
-      `    local _kw2v=_kw2==0 and ${nK0} or _kw2==1 and ${nK1} or _kw2==2 and ${nK2} or ${nK3}`,
-      `    ${nSeed}=(${nSeed}+(bit32.bxor(bit32.lshift(${nSeed},4),bit32.rshift(${nSeed},5))+${nSeed})`,
-      `       %4294967296+bit32.bxor(_sum,_kw))%4294967296`,
-      `  end`,
-      `  ${nSeed}=${nSeed}%256`,
-      `  ${nState}=${decodeState(9)}`,  // sMkKey
-      `  ${nResult}=${nSeed}`,
+      `if ${is(ST.env)} then`,
+      junk(),
+      `  ${nT}=0`,
+      `  if ${nSB}(${nCH}(65),1)~=65 then ${nT}=${nT}+1 end`,
+      `  if ${nSC}(${nSB}(${nCH}(66),1)+1)~=${nCH}(67) then ${nT}=${nT}+1 end`,
+      `  if ${nSB}(${nSC}(200,201,202),2)~=201 then ${nT}=${nT}+1 end`,
+      `  if ${nFloor}(7.9)~=7 or ${nFloor}(-0.5)~=-1 then ${nT}=${nT}+1 end`,
+      `  do local ${name()},${name()}=${nPC}(${nER},${nCH}(120),0) if ${nTY}(${nER})~=${nS9} or ${nTY}(${nPC})~=${nS9} then ${nT}=${nT}+1 end end`,
+      `  do local _a,_b=${nPC}(${nER},${nCH}(120),0) if _a~=false or _b~=${nCH}(120) then ${nT}=${nT}+1 end end`,
+      `  ${go(ST.hash)}`,
       `end`,
     ].join("\n"),
-
-    // ── sMkKey: RC4-KSA to build sbox ───────────────────────────────
+    // hash data + combine
     [
-      `if ${isSt(9)} then`,
-      `  ${junk()}`,
-      `  local _seed=${nResult}`,
-      `  ${nSbox}={}`,
-      `  for ${nI}=0,255 do ${nSbox}[${nI}]=${nI} end`,
-      `  local _j,_ks=0,_seed`,
-      `  ${nKbuf}=buffer.create(32)`,
-      `  for _ki=0,31 do`,
-      `    _ks=(_ks*1664525+1013904223)%4294967296`,
-      `    buffer.writeu8(${nKbuf},_ki,_ks%256)`,
-      `  end`,
-      `  for ${nI}=0,255 do`,
-      `    _j=(_j+${nSbox}[${nI}]+buffer.readu8(${nKbuf},${nI}%32))%256`,
-      `    ${nSbox}[${nI}],${nSbox}[_j]=${nSbox}[_j],${nSbox}[${nI}]`,
-      `  end`,
-      `  ${nState}=${decodeState(2)}`,  // sKsa done → sPrga
+      `if ${is(ST.hash)} then`,
+      junk(),
+      `  ${nDH}=0`,
+      `  for _i=1,#${nData} do ${nDH}=(${nDH}*257+${nSB}(${nData},_i)+1)%${M} end`,
+      `  ${nH}=(${nDH}*3+${nHH}*5+${nT}*${T_SALT}+${salt})%${M}`,
+      `  ${go(ST.key)}`,
       `end`,
     ].join("\n"),
-
-    // ── sKsa (state 2 → sPrga) is handled inline above; reuse slot for sPrga ─
-    // ── sPrga: RC4 keystream + XOR decrypt ───────────────────────────────
+    // key
     [
-      `if ${isSt(2)} then`,
-      `  ${junk()}`,
+      `if ${is(ST.key)} then`,
+      junk(),
+      `  ${nKB}={}`,
+      `  for _i=1,32 do`,
+      `    local _m=(${nH}*(_i+13)+40503)%${M}`,
+      `    ${nKB}[_i]=(${nKS}[_i]-(((_m-_m%256)/256)%256))%256`,
+      `  end`,
+      `  ${go(ST.ksa)}`,
+      `end`,
+    ].join("\n"),
+    // ksa
+    [
+      `if ${is(ST.ksa)} then`,
+      junk(),
+      `  ${nBox}={}`,
+      `  for _i=0,255 do ${nBox}[_i]=_i end`,
+      `  local _j=0`,
+      `  for _i=0,255 do`,
+      `    _j=(_j+${nBox}[_i]+${nKB}[_i%32+1])%256`,
+      `    ${nBox}[_i],${nBox}[_j]=${nBox}[_j],${nBox}[_i]`,
+      `  end`,
+      `  ${go(ST.dec)}`,
+      `end`,
+    ].join("\n"),
+    // decrypt
+    [
+      `if ${is(ST.dec)} then`,
+      junk(),
       `  local _a,_b=0,0`,
-      `  local _sbox=${nSbox}`,
-      `  local _plain={}`,
-      `  local _datab=buffer.fromstring(${nData})`,
-      `  for ${nI}=0,${cipher.length - 1} do`,
+      `  local _ls=(${nKB}[1]*16777216+${nKB}[2]*65536+${nKB}[3]*256+${nKB}[4])%${M}`,
+      `  local _o={}`,
+      `  local _hp=0`,
+      `  for _i=1,#${nData} do`,
       `    _a=(_a+1)%256`,
-      `    _b=(_b+_sbox[_a])%256`,
-      `    _sbox[_a],_sbox[_b]=_sbox[_b],_sbox[_a]`,
-      `    local _ks=_sbox[(_sbox[_a]+_sbox[_b])%256]`,
-      `    _plain[${nI}+1]=buffer.readu8(_datab,${nI})%256`,
-      `    _plain[${nI}+1]=bit32.bxor(_plain[${nI}+1],_ks)`,
+      `    _b=(_b+${nBox}[_a])%256`,
+      `    ${nBox}[_a],${nBox}[_b]=${nBox}[_b],${nBox}[_a]`,
+      `    local _r=${nBox}[(${nBox}[_a]+${nBox}[_b])%256]`,
+      `    _ls=(_ls*1664525+1013904223)%${M}`,
+      `    local _p=(${nSB}(${nData},_i)-_r-((_ls-_ls%65536)/65536)%256)%256`,
+      `    _hp=(_hp*257+_p+1)%${M}`,
+      `    _o[_i]=${nCH}(_p)`,
       `  end`,
-      `  ${nSrc}=table.concat(table.move(_plain,1,#_plain,1,{}),",")`,
-      `  local _pb=buffer.create(${cipher.length})`,
-      `  for _pi=1,${cipher.length} do buffer.writeu8(_pb,_pi-1,_plain[_pi]) end`,
-      `  ${nSrc}=buffer.tostring(_pb)`,
-      `  ${nState}=${decodeState(10)}`,  // sChkSum
+      `  ${nP}=table.concat(_o)`,
+      `  ${nHP}=_hp`,
+      `  if ${nHP}~=${plainHash} then ${go(ST.fail)} else ${go(ST.load)} end`,
       `end`,
     ].join("\n"),
-
-    // ── sChkSum: verify plaintext Adler-32 ───────────────────────────────
+    // load
     [
-      `if ${isSt(10)} then`,
-      `  ${junk()}`,
-      `  local _a,_b=1,0`,
-      `  for _i=1,#${nSrc} do`,
-      `    local _bv=string.byte(${nSrc},_i)`,
-      `    _a=(_a+_bv)%65521`,
-      `    _b=(_b+_a)%65521`,
-      `  end`,
-      `  local _chk=(_b*65536+_a)%4294967296`,
-      `  if _chk~=${checkPlain} then`,
-      `    ${nState}=${decodeState(7)}`,  // sFail
-      `  else`,
-      `    ${nState}=${decodeState(5)}`,  // sLoad
-      `  end`,
+      `if ${is(ST.load)} then`,
+      junk(),
+      `  ${nF}=${nLS}(${nP})`,
+      `  if not ${nF} then ${go(ST.fail)} else ${go(ST.run)} end`,
       `end`,
     ].join("\n"),
-
-    // ── sLoad: compile plaintext ──────────────────────────────────────────
-    [
-      `if ${isSt(5)} then`,
-      `  ${junk()}`,
-      `  ${nFn},${nErr}=(loadstring or load)(${nSrc})`,
-      `  if not ${nFn} then ${nState}=${decodeState(7)} else ${nState}=${decodeState(6)} end`,
-      `end`,
-    ].join("\n"),
-
-    // ── sRun: execute ────────────────────────────────────────────────────
-    [
-      `if ${isSt(6)} then`,
-      `  ${junk()}`,
-      `  return ${nFn}(...)`,
-      `end`,
-    ].join("\n"),
-
-    // ── sFail: integrity error ────────────────────────────────────────────
-    [
-      `if ${isSt(7)} then`,
-      `  error("[VM] integrity check failed",0)`,
-      `end`,
-    ].join("\n"),
+    // run
+    [`if ${is(ST.run)} then`, junk(), `  ${go(ST.done)}`, `end`].join("\n"),
+    // fail
+    [`if ${is(ST.fail)} then`, `  ${nER}(${nMSG},0)`, `end`].join("\n"),
+    // decoy states (unreachable)
+    ...Array.from({ length: 3 }, () => {
+      const d = sid();
+      return [
+        `if ${is(d)} then`,
+        junk(),
+        `  for _i=1,#${nData} do ${nKB}[_i%32+1]=(${nKB}[_i%32+1]+${nSB}(${nData},_i))%256 end`,
+        `  ${go(rngRange(2) ? ST.fail : d)}`,
+        `end`,
+      ].join("\n");
+    }),
   ];
 
-  // ── Shuffle branch order ─────────────────────────────────────────────────
-  const shuffled = shuffle(branches);
+  // ── ciphertext literal chunks ────────────────────────────────────────────
+  const CHUNK = 48 + rngRange(48);
+  const chunks: string[] = [];
+  for (let off = 0; off < cipher.length; off += CHUNK)
+    chunks.push(`"${Array.from(cipher.slice(off, off + CHUNK)).map(luaByte).join("")}"`);
 
-  // ── Assemble the wrapper ─────────────────────────────────────────────────
-  return [
-    junk(),
-    `local ${nMask}=${mask}`,
-    `local ${nStates}={${stateEntries}}`,
-    `local ${nData}=table.concat({${chunks.join(",")}})`,
-    `local ${nSbox},{${nFn},${nErr},${nSrc},${nResult},${nKbuf}}`,
-    `local ${nState}=${decodeState(1)}`,  // sInit
-    `${junk()}`,
-    `while true do`,
-    ...shuffled,
-    `  if ${nState}==${decodeState(6)} then break end`,
-    `  if ${nState}==${decodeState(7)} then error("[VM] integrity check failed",0) end`,
+  // The decoder S (hashes its own encrypted inputs into nHH for tamper-keyed derivation).
+  const head = [
+    `local ${nCH}=string.char`,
+    `local ${nG}=(getfenv and getfenv(1)) or _G`,
+    `local ${nHH}=0`,
+    `local function ${nDec}(t,k)`,
+    `  local o={}`,
+    `  for i=1,#t do`,
+    `    ${nHH}=(${nHH}*257+t[i])%${M}`,
+    `    o[i]=${nCH}((t[i]-k-i*3)%256)`,
+    `  end`,
+    `  ${nHH}=(${nHH}*257+k)%${M}`,
+    `  return table.concat(o)`,
     `end`,
-    `return ${nFn}(...)`,
+    `local ${nData}=table.concat({${chunks.join(",")}})`,
+    `local ${nKS}={${keyStored.join(",")}}`,
+    `local ${[nState, nF, nP, nT, nH, nKB, nBox, nHP, nSTR, nSB, nSC, nLS, nER, nPC, nTY, nMSG, nDH, nMath, nFloor, nS1, nS2, nS3, nS4, nS5, nS6, nS7, nS8, nS9, nS10, nS11, nS12].join(",")}`,
   ].join("\n");
+
+  const lines = [
+    junks(3),
+    head,
+    `${go(ST.names)}`,
+    `while true do`,
+    ...shuffle(branches),
+    `  if ${is(ST.done)} then break end`,
+    `end`,
+    `return ${nF}(...)`,
+  ];
+  return lines.join("\n");
 }
 
 export function obfuscateLua(source: string, passes = 1): string {
   let cur = source;
-  const n = Math.max(1, Math.min(3, passes));
+  const n = Math.max(1, Math.min(4, passes));
   for (let i = 0; i < n; i++) cur = wrapOnce(cur);
   return cur;
 }
