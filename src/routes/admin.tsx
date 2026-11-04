@@ -60,7 +60,7 @@ function AdminPage() {
     enabled: !!user && access.data === true,
     retry: false,
   });
-  const [email, setEmail] = useState("Bypaddasja@gmail.com");
+  const [email, setEmail] = useState("skullobf@outlook.com");
   const [password, setPassword] = useState("");
   const [signup, setSignup] = useState(false);
   const [busy, setBusy] = useState(false);
