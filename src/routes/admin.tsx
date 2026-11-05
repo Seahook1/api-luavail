@@ -60,7 +60,7 @@ function AdminPage() {
     enabled: !!user && access.data === true,
     retry: false,
   });
-  const [email, setEmail] = useState("skullobf@outlook.com");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signup, setSignup] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -178,7 +178,7 @@ function AdminPage() {
               setMessage("");
             }}
           >
-            {signup ? "Already registered? Sign in" : "Create the designated admin account"}
+            {signup ? "Already registered? Sign in" : "Create admin account"}
           </Button>
         </form>
       ) : access.isPending ? (
