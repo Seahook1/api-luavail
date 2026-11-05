@@ -15,7 +15,9 @@ import { Route as RedeemRouteImport } from './routes/redeem'
 import { Route as GetkeyScriptIdRouteImport } from './routes/getkey.$scriptId'
 import { Route as ApiPublicDiscordRouteImport } from './routes/api/public/discord'
 import { Route as ApiPublicFetchRouteImport } from './routes/api/public/fetch'
+import { Route as ApiPublicHeartbeatRouteImport } from './routes/api/public/heartbeat'
 import { Route as ApiPublicLoaderScriptIdRouteImport } from './routes/api/public/loader.$scriptId'
+import { Route as ApiPublicSessionInitRouteImport } from './routes/api/public/session/init'
 import { Route as ApiPublicV1ScriptsRouteImport } from './routes/api/public/v1/scripts'
 import { Route as ApiPublicV1ScriptsIdRouteImport } from './routes/api/public/v1/scripts.$id'
 import { Route as ApiPublicV1ScriptsIdKeysRouteImport } from './routes/api/public/v1/scripts.$id.keys'
@@ -50,9 +52,19 @@ const ApiPublicFetchRoute = ApiPublicFetchRouteImport.update({
   path: '/api/public/fetch',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHeartbeatRoute = ApiPublicHeartbeatRouteImport.update({
+  id: '/api/public/heartbeat',
+  path: '/api/public/heartbeat',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicLoaderScriptIdRoute = ApiPublicLoaderScriptIdRouteImport.update({
   id: '/api/public/loader/$scriptId',
   path: '/api/public/loader/$scriptId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicSessionInitRoute = ApiPublicSessionInitRouteImport.update({
+  id: '/api/public/session/init',
+  path: '/api/public/session/init',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicV1ScriptsRoute = ApiPublicV1ScriptsRouteImport.update({
@@ -79,6 +91,8 @@ export interface FileRoutesByFullPath {
   '/getkey/$scriptId': typeof GetkeyScriptIdRoute
   '/api/public/discord': typeof ApiPublicDiscordRoute
   '/api/public/fetch': typeof ApiPublicFetchRoute
+  '/api/public/heartbeat': typeof ApiPublicHeartbeatRoute
+  '/api/public/session/init': typeof ApiPublicSessionInitRoute
   '/api/public/v1/scripts': typeof ApiPublicV1ScriptsRouteWithChildren
   '/api/public/loader/$scriptId': typeof ApiPublicLoaderScriptIdRoute
   '/api/public/v1/scripts/$id': typeof ApiPublicV1ScriptsIdRouteWithChildren
@@ -91,6 +105,8 @@ export interface FileRoutesByTo {
   '/getkey/$scriptId': typeof GetkeyScriptIdRoute
   '/api/public/discord': typeof ApiPublicDiscordRoute
   '/api/public/fetch': typeof ApiPublicFetchRoute
+  '/api/public/heartbeat': typeof ApiPublicHeartbeatRoute
+  '/api/public/session/init': typeof ApiPublicSessionInitRoute
   '/api/public/v1/scripts': typeof ApiPublicV1ScriptsRouteWithChildren
   '/api/public/loader/$scriptId': typeof ApiPublicLoaderScriptIdRoute
   '/api/public/v1/scripts/$id': typeof ApiPublicV1ScriptsIdRouteWithChildren
@@ -104,6 +120,8 @@ export interface FileRoutesById {
   '/getkey/$scriptId': typeof GetkeyScriptIdRoute
   '/api/public/discord': typeof ApiPublicDiscordRoute
   '/api/public/fetch': typeof ApiPublicFetchRoute
+  '/api/public/heartbeat': typeof ApiPublicHeartbeatRoute
+  '/api/public/session/init': typeof ApiPublicSessionInitRoute
   '/api/public/v1/scripts': typeof ApiPublicV1ScriptsRouteWithChildren
   '/api/public/loader/$scriptId': typeof ApiPublicLoaderScriptIdRoute
   '/api/public/v1/scripts/$id': typeof ApiPublicV1ScriptsIdRouteWithChildren
@@ -118,6 +136,8 @@ export interface FileRouteTypes {
     | '/getkey/$scriptId'
     | '/api/public/discord'
     | '/api/public/fetch'
+    | '/api/public/heartbeat'
+    | '/api/public/session/init'
     | '/api/public/v1/scripts'
     | '/api/public/loader/$scriptId'
     | '/api/public/v1/scripts/$id'
@@ -130,6 +150,8 @@ export interface FileRouteTypes {
     | '/getkey/$scriptId'
     | '/api/public/discord'
     | '/api/public/fetch'
+    | '/api/public/heartbeat'
+    | '/api/public/session/init'
     | '/api/public/v1/scripts'
     | '/api/public/loader/$scriptId'
     | '/api/public/v1/scripts/$id'
@@ -142,6 +164,8 @@ export interface FileRouteTypes {
     | '/getkey/$scriptId'
     | '/api/public/discord'
     | '/api/public/fetch'
+    | '/api/public/heartbeat'
+    | '/api/public/session/init'
     | '/api/public/v1/scripts'
     | '/api/public/loader/$scriptId'
     | '/api/public/v1/scripts/$id'
@@ -155,6 +179,8 @@ export interface RootRouteChildren {
   GetkeyScriptIdRoute: typeof GetkeyScriptIdRoute
   ApiPublicDiscordRoute: typeof ApiPublicDiscordRoute
   ApiPublicFetchRoute: typeof ApiPublicFetchRoute
+  ApiPublicHeartbeatRoute: typeof ApiPublicHeartbeatRoute
+  ApiPublicSessionInitRoute: typeof ApiPublicSessionInitRoute
   ApiPublicV1ScriptsRoute: typeof ApiPublicV1ScriptsRouteWithChildren
   ApiPublicLoaderScriptIdRoute: typeof ApiPublicLoaderScriptIdRoute
 }
@@ -203,11 +229,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicFetchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/heartbeat': {
+      id: '/api/public/heartbeat'
+      path: '/api/public/heartbeat'
+      fullPath: '/api/public/heartbeat'
+      preLoaderRoute: typeof ApiPublicHeartbeatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/loader/$scriptId': {
       id: '/api/public/loader/$scriptId'
       path: '/api/public/loader/$scriptId'
       fullPath: '/api/public/loader/$scriptId'
       preLoaderRoute: typeof ApiPublicLoaderScriptIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/session/init': {
+      id: '/api/public/session/init'
+      path: '/api/public/session/init'
+      fullPath: '/api/public/session/init'
+      preLoaderRoute: typeof ApiPublicSessionInitRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/v1/scripts': {
@@ -263,6 +303,8 @@ const rootRouteChildren: RootRouteChildren = {
   GetkeyScriptIdRoute: GetkeyScriptIdRoute,
   ApiPublicDiscordRoute: ApiPublicDiscordRoute,
   ApiPublicFetchRoute: ApiPublicFetchRoute,
+  ApiPublicHeartbeatRoute: ApiPublicHeartbeatRoute,
+  ApiPublicSessionInitRoute: ApiPublicSessionInitRoute,
   ApiPublicV1ScriptsRoute: ApiPublicV1ScriptsRouteWithChildren,
   ApiPublicLoaderScriptIdRoute: ApiPublicLoaderScriptIdRoute,
 }
