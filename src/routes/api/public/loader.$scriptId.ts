@@ -10,10 +10,7 @@ export const Route = createFileRoute('/api/public/loader/$scriptId')({
       return new Response('--ERR:Script not found', { status: 200 })
     }
     if (isBrowserNavigation(request)) {
-      return new Response(browserBlockedPage(`${API_BASE}/api/public/loader/${params.scriptId}`), {
-        status: 200,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      })
+      return browserBlockedPage(`${API_BASE}/api/public/loader/${params.scriptId}`)
     }
     const lua = `
 local SCRIPT_ID = "${params.scriptId}"

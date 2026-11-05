@@ -15,10 +15,7 @@ export const Route = createFileRoute("/api/public/fetch")({
       GET: async ({ request }) => {
         try {
           if (isBrowserNavigation(request)) {
-            return new Response(browserBlockedPage(`${new URL(request.url).origin}/api/public/loader/SCRIPT_ID`), {
-              status: 200,
-              headers: { "Content-Type": "text/html; charset=utf-8" },
-            });
+            return browserBlockedPage(`${new URL(request.url).origin}/api/public/loader/SCRIPT_ID`);
           }
           const { supabaseAdmin: db } = await import("@/integrations/supabase/client.server");
           const token = new URL(request.url).searchParams.get("token");
