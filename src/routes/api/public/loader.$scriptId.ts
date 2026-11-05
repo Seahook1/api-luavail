@@ -28,7 +28,7 @@ local function getParam(n)
   return g[n] or ""
 end
 
-local HWID = getParam("hwid")
+local HWID = tostring(getParam("hwid")):gsub("[^%w_%-]", "")
 if HWID == "" then
   local ok, id = pcall(function()
     return game:GetService("RbxAnalyticsService"):GetClientId()
