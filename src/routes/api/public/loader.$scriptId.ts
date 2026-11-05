@@ -1,9 +1,17 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { isBrowserNavigation, browserBlockedPage } from '@/lib/browser-page'
+import { obfuscateLua } from '@/lib/obfuscate'
 
 const API_BASE = 'https://api-luavail.lovable.app'
 
 export const Route = createFileRoute('/api/public/loader/$scriptId')({
-  server: { handlers: { GET: async ({ params }) => {
+  server: { handlers: { GET: async ({ params, request }) => {
+    if (!/^[0-9a-f-]{36}$/i.test(params.scriptId)) {
+      return new Response('--ERR:Script not found', { status: 200 })
+    }
+    if (isBrowserNavigation(request)) {
+      return browserBlockedPage(`${API_BASE}/api/public/loader/${params.scriptId}`)
+    }
     const lua = `
 local SCRIPT_ID = "${params.scriptId}"
 local API_BASE  = "${API_BASE}"
@@ -17,7 +25,7 @@ local function getParam(n)
   return g[n] or ""
 end
 
-local HWID = getParam("hwid")
+local HWID = tostring(getParam("hwid")):gsub("[^%w_%-]", "")
 if HWID == "" then
   local ok, id = pcall(function()
     return game:GetService("RbxAnalyticsService"):GetClientId()
@@ -25,6 +33,8 @@ if HWID == "" then
   HWID = ok and id or ""
 end
 local KEY = getParam("key")
+if KEY == "" then KEY = getParam("script_key") end
+KEY = tostring(KEY):gsub("[^%w_%-]", "")
 
 -- ── Step 1: init ────────────────────────────────────────────────
 local okI, initResp = pcall(function()
@@ -81,7 +91,7 @@ task.spawn(function()
 end)
 `
 
-    return new Response(lua, {
+    return new Response(obfuscateLua(lua, 2), {
       status: 200,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     })

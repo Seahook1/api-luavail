@@ -15,6 +15,13 @@
       "when": 1793407523455,
       "tag": "0001_admin_script_moderation",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793921463281,
+      "tag": "0002_execution_tokens_handshake",
+      "breakpoints": true
     }
   ]
 }

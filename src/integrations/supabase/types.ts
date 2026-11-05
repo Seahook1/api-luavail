@@ -44,6 +44,24 @@ export type Database = {
         }
         Relationships: []
       }
+      banned_hwids: {
+        Row: {
+          created_at: string
+          hwid: string
+          reason: string | null
+        }
+        Insert: {
+          created_at?: string
+          hwid: string
+          reason?: string | null
+        }
+        Update: {
+          created_at?: string
+          hwid?: string
+          reason?: string | null
+        }
+        Relationships: []
+      }
       discord_links: {
         Row: {
           created_at: string
@@ -103,6 +121,72 @@ export type Database = {
           },
         ]
       }
+      execution_tokens: {
+        Row: {
+          canary: string | null
+          consumed: boolean
+          created_at: string
+          expires_at: string
+          heartbeat_token: string | null
+          hwid: string
+          id: string
+          ip: string | null
+          key_id: string | null
+          last_heartbeat_at: string | null
+          revoked: boolean
+          script_id: string
+          session_expires_at: string | null
+          token: string
+        }
+        Insert: {
+          canary?: string | null
+          consumed?: boolean
+          created_at?: string
+          expires_at: string
+          heartbeat_token?: string | null
+          hwid: string
+          id?: string
+          ip?: string | null
+          key_id?: string | null
+          last_heartbeat_at?: string | null
+          revoked?: boolean
+          script_id: string
+          session_expires_at?: string | null
+          token: string
+        }
+        Update: {
+          canary?: string | null
+          consumed?: boolean
+          created_at?: string
+          expires_at?: string
+          heartbeat_token?: string | null
+          hwid?: string
+          id?: string
+          ip?: string | null
+          key_id?: string | null
+          last_heartbeat_at?: string | null
+          revoked?: boolean
+          script_id?: string
+          session_expires_at?: string | null
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "execution_tokens_key_id_fkey"
+            columns: ["key_id"]
+            isOneToOne: false
+            referencedRelation: "license_keys"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "execution_tokens_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: false
+            referencedRelation: "scripts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       getkey_sessions: {
         Row: {
           created_at: string
@@ -150,7 +234,9 @@ export type Database = {
           hwid_reset_at: string | null
           id: string
           key: string
+          last_rebind_at: string | null
           last_used_at: string | null
+          max_concurrent_sessions: number
           note: string | null
           owner_id: string
           script_id: string
@@ -163,7 +249,9 @@ export type Database = {
           hwid_reset_at?: string | null
           id?: string
           key: string
+          last_rebind_at?: string | null
           last_used_at?: string | null
+          max_concurrent_sessions?: number
           note?: string | null
           owner_id?: string
           script_id: string
@@ -176,7 +264,9 @@ export type Database = {
           hwid_reset_at?: string | null
           id?: string
           key?: string
+          last_rebind_at?: string | null
           last_used_at?: string | null
+          max_concurrent_sessions?: number
           note?: string | null
           owner_id?: string
           script_id?: string
