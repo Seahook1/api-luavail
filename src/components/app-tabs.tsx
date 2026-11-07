@@ -1,4 +1,9 @@
 import { Link, useLocation } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useAppSession } from "@/components/session-provider";
+import { getAdminAccess } from "@/lib/admin.functions";
+import { canShowAdminTab } from "@/lib/admin-navigation";
 
 const TABS = [
   { id: "home", label: "Home" },
@@ -10,6 +15,15 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 export function AppTabs() {
+  const { user, ready } = useAppSession();
+  const check = useServerFn(getAdminAccess);
+  const access = useQuery({
+    queryKey: ["admin-access", user?.id],
+    queryFn: () => check(),
+    enabled: ready && !!user,
+    retry: false,
+  });
+  const showAdmin = canShowAdminTab(ready, user?.id, access.data);
   const location = useLocation();
   const params = new URLSearchParams(location.searchStr);
   const active: TabId | "buyer" | "admin" | null =
@@ -52,13 +66,13 @@ export function AppTabs() {
         >
           Buyer<span className="hidden sm:inline"> portal</span>
         </Link>
-        <Link
+        {showAdmin && <Link
           to="/admin"
           aria-current={active === "admin" ? "page" : undefined}
           className={`${base} ${active === "admin" ? on : off}`}
         >
           Admin
-        </Link>
+        </Link>}
       </div>
     </nav>
   );
