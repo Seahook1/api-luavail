@@ -66,7 +66,7 @@ export const Route = createFileRoute("/api/public/discord")({
           if (lic.expires_at && new Date(lic.expires_at) < new Date()) return reply("⌛ This key has expired. Contact the seller.");
           const sn = (lic.scripts as unknown as { name?: string } | null)?.name ?? "Script";
           const exp = lic.expires_at ? `<t:${Math.floor(new Date(lic.expires_at).getTime() / 1000)}:R>` : "never";
-          return reply(`✅ **${sn}** — valid, expires ${exp}, device ${lic.hwid ? "locked" : "not locked yet"}\n\`\`\`lua\nscript_key = "${key}"\nloadstring(game:HttpGet("${origin}/api/public/loader/${lic.script_id}"))()\n\`\`\``);
+          return reply(`✅ **${sn}** — valid, expires ${exp}, device ${lic.hwid ? "locked" : "not locked yet"}\n\`\`\`lua\nscript_key = "${key}"\nloadstring(game:HttpGet("${origin}/api/public/cdn/loader/${lic.script_id}"))()\n\`\`\``);
         }
 
         if (name === "check") {

@@ -26,7 +26,7 @@ export const Route = createFileRoute("/api/public/v1/scripts")({
         const { data, error } = await a.db.from("scripts").insert({ name: p.data.name, source: p.data.source ?? "", keyless: p.data.keyless ?? false, owner_id: a.ownerId }).select(SCRIPT_COLS).single();
         if (error) return json({ error: error.message }, 500);
         const origin = new URL(request.url).origin;
-        return json({ script: data, loader: `loadstring(game:HttpGet("${origin}/api/public/loader/${data.id}"))()` }, 201);
+        return json({ script: data, loader: `loadstring(game:HttpGet("${origin}/api/public/cdn/loader/${data.id}"))()` }, 201);
       },
     },
   },

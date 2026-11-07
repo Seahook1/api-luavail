@@ -53,7 +53,7 @@ function Redeem() {
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const loader = res?.found
-    ? `script_key = "${key.trim()}"\nloadstring(game:HttpGet("${origin}/api/public/loader/${res.scriptId}"))()`
+    ? `script_key = "${key.trim()}"\nloadstring(game:HttpGet("${origin}/api/public/cdn/loader/${res.scriptId}"))()`
     : "";
 
   return (
