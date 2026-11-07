@@ -1,19 +1,20 @@
 // Portable Lua 5.1 / Luau obfuscator with layered anti-tamper.
 //
 // Each layer turns a Lua chunk into another Lua chunk that:
-//   · encrypts the payload (real source + decoy bytes) with RC4 + a position-dependent
-//     LCG stream (additive, no bit32/buffer)
-//   · derives the cipher key from a hash of the ciphertext, of the decoder's own encrypted
-//     constants and of runtime environment self-tests. The decoy bytes are load-bearing:
-//     editing *any* ciphertext byte (real or decoy) shifts the derived key, so decryption
-//     yields garbage and the plaintext hash check fails. There is no single "if tampered"
-//     branch to patch out.
-//   · verifies a plaintext hash (over the real+decoy plaintext) and fails with a generic,
-//     per-layer randomized error message
-//   · hides every library / global name behind encrypted strings
-//   · runs as a shuffled state machine whose transitions use a shared runtime mask
+//   · prepends/appends decoy comment lines to the payload, then encrypts the whole stream
+//     (real source + decoys) with RC4 + a position-dependent LCG stream
+//   · derives the *string* cipher key from a hash of the ciphertext itself — tamper with
+//     the payload and all names decode to garbage before the env checks even run
+//   · derives the *payload* cipher key from the ciphertext hash, the encrypted-name hash,
+//     the runtime env self-test count, and a random per-layer salt
+//   · env self-tests decrement a counter from EXPECTED (not increment from 0), so
+//     deleting the tests leaves the counter at EXPECTED ≠ 0 and the key is wrong
+//   · verifies a dual plaintext hash (over decoys + real source) and fails with a
+//     per-layer randomized generic error message
+//   · runs as a shuffled state machine whose transitions use a single shared mask
 //   · uses randomised confusable identifiers (I, l, 1, O, 0)
-// Layers can be stacked; each gets fresh keys, names, state ids, mask, decoys and error text.
+// Layers can be stacked; each gets fresh keys, names, state ids, mask, decoy comments,
+// T_SALT, and error message.
 //
 // Client-side protection can slow analysis but cannot be an authorization boundary: a
 // determined user can still hook loadstring and capture the final plaintext.
@@ -50,7 +51,6 @@ const luaByte = (b: number) =>
     ? String.fromCharCode(b)
     : `\\${String(b).padStart(3, "0")}`;
 
-const mod = (n: number, m: number) => ((n % m) + m) % m;
 const roll = (h: number, v: number) => (h * 257 + v) % M;
 
 const ERR_MSGS = [
@@ -61,6 +61,8 @@ const ERR_MSGS = [
   "load failed",
   "unexpected symbol",
 ] as const;
+
+const K_CHECKS = 15;
 
 function wrapOnce(source: string): string {
   // ── identifiers ──────────────────────────────────────────────────────────
@@ -77,7 +79,7 @@ function wrapOnce(source: string): string {
     }
   };
 
-  // ── keys & combined plaintext (real source + decoy) ──────────────────────
+  // ── keys ─────────────────────────────────────────────────────────────────
   const keyBytes = Array.from({ length: 32 }, () => rngRange(256));
   const seed =
     ((keyBytes[0] ?? 0) * 16777216 +
@@ -86,18 +88,29 @@ function wrapOnce(source: string): string {
       (keyBytes[3] ?? 0)) %
     M;
 
-  const plain = new TextEncoder().encode(source);
-  const decoyLen = 128 + rngRange(384);
-  const decoyPlain = new Uint8Array(decoyLen);
-  crypto.getRandomValues(decoyPlain);
+  // ── decoy comment lines (valid Lua, indistinguishable from real comments) ─
+  const decoyText = (): string => {
+    const lines: string[] = [];
+    const n = 3 + rngRange(10);
+    for (let i = 0; i < n; i++) {
+      const len = 20 + rngRange(60);
+      let s = "";
+      for (let j = 0; j < len; j++) {
+        let c = 32 + rngRange(95);
+        while (c === 10 || c === 13) c = 32 + rngRange(95);
+        s += String.fromCharCode(c);
+      }
+      lines.push(`-- ${s}`);
+    }
+    return lines.join("\n");
+  };
+  const decoyPrefix = decoyText() + "\n";
+  const decoySuffix = "\n" + decoyText();
 
-  // Encrypt real source + decoy bytes together. The whole thing participates in both
-  // the plaintext hash and the ciphertext hash, so decoys are load-bearing for integrity.
-  const combined = new Uint8Array(plain.length + decoyLen);
-  combined.set(plain);
-  combined.set(decoyPlain, plain.length);
-  const realLen = plain.length;
+  // ── plaintext = decoys + source + decoys ─────────────────────────────────
+  const plain = new TextEncoder().encode(decoyPrefix + source + decoySuffix);
 
+  // ── encrypt (RC4 KSA/PRGA + additive LCG stream) ─────────────────────────
   const sbox = Array.from({ length: 256 }, (_, i) => i);
   {
     let j = 0;
@@ -106,22 +119,19 @@ function wrapOnce(source: string): string {
       [sbox[i], sbox[j]] = [sbox[j] ?? 0, sbox[i] ?? 0];
     }
   }
-  const cipher = new Uint8Array(combined.length);
+  const cipher = new Uint8Array(plain.length);
   let plainHash = 0;
-  // Independent prime-modulus checksum: corruption must satisfy both recurrences.
   let plainHash2 = 1;
   {
-    let a = 0,
-      b = 0,
-      ls = seed;
-    for (let n = 0; n < combined.length; n++) {
+    let a = 0, b = 0, ls = seed;
+    for (let n = 0; n < plain.length; n++) {
       a = (a + 1) % 256;
       b = (b + (sbox[a] ?? 0)) % 256;
       [sbox[a], sbox[b]] = [sbox[b] ?? 0, sbox[a] ?? 0];
       const r = sbox[((sbox[a] ?? 0) + (sbox[b] ?? 0)) % 256] ?? 0;
       ls = (ls * 1664525 + 1013904223) % M;
       const l = Math.floor(ls / 65536) % 256;
-      const byte = combined[n] ?? 0;
+      const byte = plain[n] ?? 0;
       cipher[n] = (byte + r + l) % 256;
       plainHash = roll(plainHash, byte + 1);
       plainHash2 = (plainHash2 * 131 + byte + n + 1) % 65521;
@@ -130,17 +140,26 @@ function wrapOnce(source: string): string {
   let dataHash = 0;
   for (const c of cipher) dataHash = roll(dataHash, c + 1);
 
-  // ── encrypted names / strings (mirrors decoder S in Lua) ─────────────────
+  // ── encrypted names, keyed off the *ciphertext hash* ─────────────────────
+  // If the payload is tampered with, dataHash changes, the string stream changes,
+  // every name decodes to garbage, and the chunk fails before env checks even run.
   let constHash = 0;
   const encStr = (s: string): string => {
-    const k = 1 + rngRange(250);
+    const off = rngRange(M);
+    let state = (dataHash + off) % M;
     const bytes = Array.from(new TextEncoder().encode(s));
-    const out = bytes.map((b, i) => (b + k + (i + 1) * 3) % 256);
+    const out: number[] = [];
+    for (const b of bytes) {
+      state = (state * 1664525 + 1013904223) % M;
+      const l = Math.floor(state / 65536) % 256;
+      out.push((b + l) % 256);
+    }
     for (const v of out) constHash = roll(constHash, v);
-    constHash = roll(constHash, k);
-    return `${nDec}({${out.join(",")}},${k})`;
+    constHash = roll(constHash, off);
+    return `${nDec}({${out.join(",")}},${off})`;
   };
 
+  // ── identifier bag ───────────────────────────────────────────────────────
   const nCH = name(),
     nG = name(),
     nHH = name(),
@@ -163,7 +182,15 @@ function wrapOnce(source: string): string {
     nPC = name(),
     nTY = name(),
     nMSG = name(),
-    nDH = name();
+    nDH = name(),
+    nTS = name(),
+    nSL = name(),
+    nRQ = name(),
+    nTBL = name(),
+    nTC = name(),
+    nSRP = name(),
+    nMath = name(),
+    nFloor = name();
 
   // ── state ids, single shared runtime mask ────────────────────────────────
   const ids = new Set<number>();
@@ -188,9 +215,6 @@ function wrapOnce(source: string): string {
     fail: sid(),
     done: sid(),
   };
-  // A single runtime mask shared by all transitions. Every branch compares with the
-  // same opaque (state - mask) % M == id predicate; there is no per-branch constant
-  // the attacker can lift and generalize.
   const stateMask = 1 + rngRange(M - 1);
   const go = (id: number) => `${nState}=(${id}+${stateMask})%${M}`;
   const is = (id: number) => `(${nState}-${stateMask})%${M}==${id}`;
@@ -212,34 +236,21 @@ function wrapOnce(source: string): string {
   };
   const junks = (n: number) => Array.from({ length: n }, junk).join("\n");
 
-  // ── environment self-tests (T counts anomalies; 0 in a clean runtime) ────
-  // Known-answer checks on core functions — a hook that changes behaviour shifts the key.
-  const T_SALT = 104729;
+  // ── env self-tests: nT starts at K_CHECKS, decrements per passing test ───
+  // Clean runtime → nT = 0.  Hooked runtime → nT > 0.  Deleted tests → nT = K_CHECKS.
+  // All three of {0} and {1..K_CHECKS} differ, so the key derivation diverges.
+  const T_SALT = 1 + rngRange(M - 1);
   const salt = rngRange(M);
 
-  // ── branches ─────────────────────────────────────────────────────────────
+  // ── names branch ─────────────────────────────────────────────────────────
+  const nS = Array.from({ length: 20 }, () => name());
+  const [nS1, nS2, nS3, nS4, nS5, nS6, nS7, nS8, nS9, nS10,
+         nS11, nS12, nS13, nS14, nS15, nS16, nS17, nS18, nS19, nS20] = nS as [
+    string, string, string, string, string, string, string, string, string, string,
+    string, string, string, string, string, string, string, string, string, string
+  ];
   const names: string[] = [];
   const decl = (v: string, s: string) => names.push(`${v}=${encStr(s)}`);
-  const nS1 = name(),
-    nS2 = name(),
-    nS3 = name(),
-    nS4 = name(),
-    nS5 = name(),
-    nS6 = name(),
-    nS7 = name(),
-    nS8 = name(),
-    nS9 = name(),
-    nS10 = name(),
-    nS11 = name(),
-    nS12 = name(),
-    nS13 = name(),
-    nS14 = name(),
-    nS15 = name(),
-    nS16 = name(),
-    nS17 = name(),
-    nS18 = name(),
-    nS19 = name(),
-    nS20 = name();
   decl(nS1, "string");
   decl(nS2, "byte");
   decl(nS3, "char");
@@ -258,18 +269,17 @@ function wrapOnce(source: string): string {
   decl(nS16, "table");
   decl(nS17, "concat");
   decl(nS18, "rep");
-  decl(nS19, "table"); // the *type* name, distinct use
+  decl(nS19, "table");
   decl(nS20, "nil");
 
+  // ── key derivation ───────────────────────────────────────────────────────
   const H = (dataHash * 3 + constHash * 5 + salt) % M;
   const keyStored = keyBytes.map((kb, i) => {
     const m = (H * (i + 1 + 13) + 40503) % M;
     return (kb + (Math.floor(m / 256) % 256)) % 256;
   });
 
-  const nMath = name(),
-    nFloor = name();
-
+  // ── branches ─────────────────────────────────────────────────────────────
   const branches: string[] = [
     // names
     [
@@ -286,37 +296,42 @@ function wrapOnce(source: string): string {
       `  ${nMSG}=${nS10}`,
       `  ${nMath}=${nG}[${nS11}]`,
       `  ${nFloor}=${nMath}[${nS12}]`,
+      `  ${nTS}=${nG}[${nS13}]`,
+      `  ${nSL}=${nG}[${nS14}]`,
+      `  ${nRQ}=${nG}[${nS15}]`,
+      `  ${nTBL}=${nG}[${nS16}]`,
+      `  ${nTC}=${nTBL}[${nS17}]`,
+      `  ${nSRP}=${nSTR}[${nS18}]`,
       `  ${go(ST.env)}`,
       `end`,
     ].join("\n"),
-    // env — broader known-answer surface (hooks on any of these shift the key)
+    // env — nT starts at K_CHECKS and decrements per passing known-answer test
     [
       `if ${is(ST.env)} then`,
       junk(),
-      `  ${nT}=0`,
-      `  if ${nSB}(${nCH}(65),1)~=65 then ${nT}=${nT}+1 end`,
-      `  if ${nSC}(${nSB}(${nCH}(66),1)+1)~=${nCH}(67) then ${nT}=${nT}+1 end`,
-      `  if ${nSB}(${nSC}(200,201,202),2)~=201 then ${nT}=${nT}+1 end`,
-      `  if ${nFloor}(7.9)~=7 or ${nFloor}(-0.5)~=-1 then ${nT}=${nT}+1 end`,
-      `  if ${nFloor}(2^53)~=2^53 then ${nT}=${nT}+1 end`,
-      `  if (0.1+0.2)==0.3 then ${nT}=${nT}+1 end`,
-      `  if ${nTY}(${nLS})~=${nS9} or ${nTY}(${nSB})~=${nS9} or ${nTY}(${nSC})~=${nS9} then ${nT}=${nT}+1 end`,
-      `  do local _s=${nSC}(0,127,255) if #_s~=3 or ${nSB}(_s,1)~=0 or ${nSB}(_s,3)~=255 then ${nT}=${nT}+1 end end`,
-      `  do local _a,_b=${nPC}(${nER},${nCH}(120),0) if _a~=false or _b~=${nCH}(120) then ${nT}=${nT}+1 end end`,
-      `  do local _ts=${nG}[${nS13}] if ${nTY}(_ts)~=${nS9} or _ts(1)~='1' or _ts(nil)~=${nS20} then ${nT}=${nT}+1 end end`,
-      `  do local _sel=${nG}[${nS14}] if ${nTY}(_sel)~=${nS9} or _sel('#',1,2,3)~=3 or _sel(2,'a','b','c')~='b' then ${nT}=${nT}+1 end end`,
-      `  do local _req=${nG}[${nS15}] if ${nTY}(_req)~=${nS9} or _req(1,1)~=true or _req(1,2)~=false then ${nT}=${nT}+1 end end`,
-      `  do local _tb=${nG}[${nS16}] if ${nTY}(_tb)~=${nS19} then ${nT}=${nT}+1 else local _tc=_tb[${nS17}] if ${nTY}(_tc)~=${nS9} or _tc({'a','b'})~='ab' then ${nT}=${nT}+1 end end end`,
-      `  do local _sr=${nSTR}[${nS18}] if ${nTY}(_sr)~=${nS9} or _sr('x',3)~='xxx' then ${nT}=${nT}+1 end end`,
+      `  ${nT}=${K_CHECKS}`,
+      `  if ${nSB}(${nSC}(65),1)==65 then ${nT}=${nT}-1 end`,
+      `  if ${nSC}(${nSB}(${nSC}(66),1)+1)==${nSC}(67) then ${nT}=${nT}-1 end`,
+      `  if ${nSB}(${nSC}(200,201,202),2)==201 then ${nT}=${nT}-1 end`,
+      `  if ${nFloor}(7.9)==7 and ${nFloor}(-0.5)==-1 then ${nT}=${nT}-1 end`,
+      `  if ${nFloor}(2^53)==2^53 then ${nT}=${nT}-1 end`,
+      `  if (0.1+0.2)~=0.3 then ${nT}=${nT}-1 end`,
+      `  if ${nTY}(${nLS})==${nS9} and ${nTY}(${nSB})==${nS9} and ${nTY}(${nSC})==${nS9} then ${nT}=${nT}-1 end`,
+      `  if #${nSC}(0,127,255)==3 and ${nSB}(${nSC}(0,127,255),1)==0 and ${nSB}(${nSC}(0,127,255),3)==255 then ${nT}=${nT}-1 end`,
+      `  if ${nTS}(1)=='1' and ${nTS}(nil)==${nS20} then ${nT}=${nT}-1 end`,
+      `  if ${nSL}('#',1,2,3)==3 and ${nSL}(2,'a','b','c')=='b' then ${nT}=${nT}-1 end`,
+      `  if ${nRQ}(1,1) and not ${nRQ}(1,2) then ${nT}=${nT}-1 end`,
+      `  if ${nTC}({'a','b'})=='ab' then ${nT}=${nT}-1 end`,
+      `  if ${nSRP}('x',3)=='xxx' then ${nT}=${nT}-1 end`,
+      `  do local _ok,_f=${nPC}(${nLS},'return 1') if _ok and ${nTY}(_f)==${nS9} and _f()==1 then ${nT}=${nT}-1 end end`,
+      `  do local _ok2,_e2=${nPC}(${nER},'x',0) if _ok2==false and _e2=='x' then ${nT}=${nT}-1 end end`,
       `  ${go(ST.hash)}`,
       `end`,
     ].join("\n"),
-    // hash data + combine
+    // hash — combine ciphertext hash, name hash, env count, salt
     [
       `if ${is(ST.hash)} then`,
       junk(),
-      `  ${nDH}=0`,
-      `  for _i=1,#${nData} do ${nDH}=(${nDH}*257+${nSB}(${nData},_i)+1)%${M} end`,
       `  ${nH}=(${nDH}*3+${nHH}*5+${nT}*${T_SALT}+${salt})%${M}`,
       `  ${go(ST.key)}`,
       `end`,
@@ -347,8 +362,7 @@ function wrapOnce(source: string): string {
       `  ${go(ST.dec)}`,
       `end`,
     ].join("\n"),
-    // decrypt — hash runs over the FULL decrypted stream (real+decoy), plaintext
-    // uses only the first <realLen> bytes. Any tamper on any byte breaks the check.
+    // decrypt — hashes the full decrypted stream (decoys + real source)
     [
       `if ${is(ST.dec)} then`,
       junk(),
@@ -368,7 +382,7 @@ function wrapOnce(source: string): string {
       `    _hq=(_hq*131+_p+_i)%65521`,
       `    _o[_i]=${nCH}(_p)`,
       `  end`,
-      `  ${nP}=table.concat(_o,'',1,${realLen})`,
+      `  ${nP}=table.concat(_o)`,
       `  ${nHP}=_hp`,
       `  if ${nHP}~=${plainHash} or _hq~=${plainHash2} then ${go(ST.fail)} else ${go(ST.load)} end`,
       `end`,
@@ -381,11 +395,11 @@ function wrapOnce(source: string): string {
       `  if not ${nF} then ${go(ST.fail)} else ${go(ST.run)} end`,
       `end`,
     ].join("\n"),
-    // run (deferred to final return to preserve vararg passthrough)
+    // run
     [`if ${is(ST.run)} then`, junk(), `  ${go(ST.done)}`, `end`].join("\n"),
     // fail
     [`if ${is(ST.fail)} then`, `  ${nER}(${nMSG},0)`, `end`].join("\n"),
-    // decoy states (unreachable) — also corrupt the key schedule if reached
+    // decoy states (unreachable) — corrupt the key schedule if reached
     ...Array.from({ length: 6 }, () => {
       const d = sid();
       return [
@@ -398,18 +412,18 @@ function wrapOnce(source: string): string {
     }),
   ];
 
-  // ── ciphertext literal chunks ────────────────────────────────────────────
-  const CHUNK = 48 + rngRange(48);
+  // ── ciphertext chunks (variable size, shuffled storage) ──────────────────
   const chunks: { slot: number; literal: string }[] = [];
-  for (let off = 0; off < cipher.length; off += CHUNK)
+  let off = 0;
+  while (off < cipher.length) {
+    const size = 32 + rngRange(80);
+    const slice = cipher.slice(off, off + size);
     chunks.push({
       slot: chunks.length + 1,
-      literal: `"${Array.from(cipher.slice(off, off + CHUNK))
-        .map(luaByte)
-        .join("")}"`,
+      literal: `"${Array.from(slice).map(luaByte).join("")}"`,
     });
-  // Scatter physical storage; independently encoded permutation reassembles it.
-  // Modulus is M (2^32) — never wraps to 0, so no pathological index.
+    off += size;
+  }
   const physical = shuffle(chunks);
   const positions = new Map(physical.map((chunk, i) => [chunk.slot, i + 1]));
   const orderMask = 1 + rngRange(M - 1);
@@ -417,22 +431,16 @@ function wrapOnce(source: string): string {
     (chunk, i) => ((positions.get(chunk.slot) ?? 0) + orderMask + (i + 1) * 7) % M,
   );
   const nPool = name(),
-    nOrder = name();
+    nOrder = name(),
+    nSB2 = name();
 
+  // ── head ─────────────────────────────────────────────────────────────────
   const head = [
     `local ${nCH}=string.char`,
-    `local ${nG}=(getfenv and getfenv(1)) or _G`,
+    `local ${nSB2}=string.byte`,
     `local ${nHH}=0`,
-    `local function ${nDec}(t,k)`,
-    `  local o={}`,
-    `  for i=1,#t do`,
-    `    ${nHH}=(${nHH}*257+t[i])%${M}`,
-    `    o[i]=${nCH}((t[i]-k-i*3)%256)`,
-    `  end`,
-    `  ${nHH}=(${nHH}*257+k)%${M}`,
-    `  return table.concat(o)`,
-    `end`,
     `local ${nData}`,
+    `local ${nDH}=0`,
     `do`,
     `  local ${nPool}={${physical.map((chunk) => chunk.literal).join(",")}}`,
     `  local ${nOrder}={${order.join(",")}}`,
@@ -440,51 +448,27 @@ function wrapOnce(source: string): string {
     `  for _i=1,#${nOrder} do _out[_i]=${nPool}[(${nOrder}[_i]-${orderMask}-_i*7)%${M}] end`,
     `  ${nData}=table.concat(_out)`,
     `end`,
+    `for _i=1,#${nData} do ${nDH}=(${nDH}*257+${nSB2}(${nData},_i)+1)%${M} end`,
+    `local function ${nDec}(t,o)`,
+    `  local r,s={},(${nDH}+o)%${M}`,
+    `  for i=1,#t do`,
+    `    s=(s*1664525+1013904223)%${M}`,
+    `    r[i]=${nCH}((t[i]-((s-s%65536)/65536)%256)%256)`,
+    `  end`,
+    `  for i=1,#t do ${nHH}=(${nHH}*257+t[i])%${M} end`,
+    `  ${nHH}=(${nHH}*257+o)%${M}`,
+    `  return table.concat(r)`,
+    `end`,
+    `local ${nG}=(getfenv and getfenv(1)) or _G`,
     `local ${nKS}={${keyStored.join(",")}}`,
     `local ${[
-      nState,
-      nF,
-      nP,
-      nT,
-      nH,
-      nKB,
-      nBox,
-      nHP,
-      nSTR,
-      nSB,
-      nSC,
-      nLS,
-      nER,
-      nPC,
-      nTY,
-      nMSG,
-      nDH,
-      nMath,
-      nFloor,
-      nS1,
-      nS2,
-      nS3,
-      nS4,
-      nS5,
-      nS6,
-      nS7,
-      nS8,
-      nS9,
-      nS10,
-      nS11,
-      nS12,
-      nS13,
-      nS14,
-      nS15,
-      nS16,
-      nS17,
-      nS18,
-      nS19,
-      nS20,
+      nState, nF, nP, nT, nH, nKB, nBox, nHP, nSTR, nSB, nSC, nLS, nER, nPC, nTY,
+      nMSG, nTS, nSL, nRQ, nTBL, nTC, nSRP, nMath, nFloor,
+      ...nS,
     ].join(",")}`,
   ].join("\n");
 
-  const lines = [
+  const out = [
     junks(3),
     head,
     `${go(ST.names)}`,
@@ -494,7 +478,7 @@ function wrapOnce(source: string): string {
     `end`,
     `return ${nF}(...)`,
   ];
-  return lines.join("\n");
+  return out.join("\n");
 }
 
 export function obfuscateLua(source: string, passes = 1): string {
