@@ -104,7 +104,6 @@ warn=print`,
   });
   it("rejects a modified ciphertext permutation before running source", () => {
     const out = obfuscateLua('print("PAYLOAD_EXECUTED")');
-    const damaged = out.replace(/(local [Il_][Il1O0_]+ =?\{)(\d+)/, "$1999999");
     // Match compact generated declarations independently of whitespace.
     const altered = out.replace(/(local [Il_][Il1O0_]+=\{)(\d+)/, (_m, prefix: string, value: string) => `${prefix}${Number(value) + 1}`);
     expect(altered).not.toBe(out);
