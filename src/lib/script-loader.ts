@@ -3,7 +3,7 @@ import { isBrowserNavigation, browserBlockedPage } from "@/lib/browser-page";
 import { CDN_PAYLOAD_PATH, DELIVERY_HEADERS, loaderUrl } from "@/lib/delivery-links";
 
 export function buildLoaderLua(scriptId: string, apiBase: string) {
-    const lua = `
+  const lua = `
 local SCRIPT_ID = "${scriptId}"
 local API_BASE  = "${apiBase}"
 
@@ -80,7 +80,7 @@ task.spawn(function()
     end
   end
 end)
-`
+`;
 
   return lua;
 }

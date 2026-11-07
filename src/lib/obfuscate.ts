@@ -68,7 +68,11 @@ function wrapOnce(source: string): string {
   // ── keys & payload ───────────────────────────────────────────────────────
   const keyBytes = Array.from({ length: 32 }, () => rngRange(256));
   const seed =
-    ((keyBytes[0] ?? 0) * 16777216 + (keyBytes[1] ?? 0) * 65536 + (keyBytes[2] ?? 0) * 256 + (keyBytes[3] ?? 0)) % M;
+    ((keyBytes[0] ?? 0) * 16777216 +
+      (keyBytes[1] ?? 0) * 65536 +
+      (keyBytes[2] ?? 0) * 256 +
+      (keyBytes[3] ?? 0)) %
+    M;
   const plain = new TextEncoder().encode(source);
 
   const sbox = Array.from({ length: 256 }, (_, i) => i);
@@ -366,8 +370,11 @@ function wrapOnce(source: string): string {
   const physical = shuffle(chunks);
   const positions = new Map(physical.map((chunk, i) => [chunk.slot, i + 1]));
   const orderMask = 1 + rngRange(65520);
-  const order = chunks.map((chunk, i) => ((positions.get(chunk.slot) ?? 0) + orderMask + (i + 1) * 7) % 65521);
-  const nPool = name(), nOrder = name();
+  const order = chunks.map(
+    (chunk, i) => ((positions.get(chunk.slot) ?? 0) + orderMask + (i + 1) * 7) % 65521,
+  );
+  const nPool = name(),
+    nOrder = name();
 
   // The decoder S (hashes its own encrypted inputs into nHH for tamper-keyed derivation).
   const head = [

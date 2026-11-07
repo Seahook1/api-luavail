@@ -6,8 +6,11 @@ import { obfuscateLua } from "@/lib/obfuscate";
 
 const maybeSingle = vi.fn();
 const query = {
-  update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
-  gt: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), maybeSingle,
+  update: vi.fn().mockReturnThis(),
+  eq: vi.fn().mockReturnThis(),
+  gt: vi.fn().mockReturnThis(),
+  select: vi.fn().mockReturnThis(),
+  maybeSingle,
 };
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: vi.fn(() => query) },
@@ -28,7 +31,10 @@ describe("CDN-style delivery", () => {
     expect(response.headers.get("CDN-Cache-Control")).toBe("no-store");
   });
   it("does not display Lua on browser navigation", async () => {
-    const response = serveLoader(new Request(loaderUrl(origin, id), { headers: { "sec-fetch-mode": "navigate" } }), id);
+    const response = serveLoader(
+      new Request(loaderUrl(origin, id), { headers: { "sec-fetch-mode": "navigate" } }),
+      id,
+    );
     expect(response.headers.get("Content-Type")).toContain("text/html");
     expect(await response.text()).toContain(loaderUrl(origin, id));
   });
@@ -65,7 +71,8 @@ warn=function(m) assert(m=="[Loader] Heartbeat lost; payload terminated") end
 ${lua}
 assert(requests==3)
 print("DELIVERY_OK")`,
-      encoding: "utf8", timeout: 5000,
+      encoding: "utf8",
+      timeout: 5000,
     });
     expect(result.stderr).toBe("");
     expect(result.status).toBe(0);

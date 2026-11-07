@@ -91,7 +91,8 @@ warn=print`,
   it("preserves multiple returns, false and nil through two layers", () => {
     const result = spawnSync("lua", ["-"], {
       input: `local a,b,c,d=(function(...)\n${obfuscateLua("return false,nil,42,...", 2)}\nend)("last")\nassert(a==false and b==nil and c==42 and d=="last")`,
-      encoding: "utf8", timeout: 5000,
+      encoding: "utf8",
+      timeout: 5000,
     });
     expect(result.status).toBe(0);
   });
@@ -105,7 +106,10 @@ warn=print`,
   it("rejects a modified ciphertext permutation before running source", () => {
     const out = obfuscateLua('print("PAYLOAD_EXECUTED")');
     // Match compact generated declarations independently of whitespace.
-    const altered = out.replace(/(local [Il_][Il1O0_]+=\{)(\d+)/, (_m, prefix: string, value: string) => `${prefix}${Number(value) + 1}`);
+    const altered = out.replace(
+      /(local [Il_][Il1O0_]+=\{)(\d+)/,
+      (_m, prefix: string, value: string) => `${prefix}${Number(value) + 1}`,
+    );
     expect(altered).not.toBe(out);
     const result = execute(altered);
     expect(result.status).not.toBe(0);
