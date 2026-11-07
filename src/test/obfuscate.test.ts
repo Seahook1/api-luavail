@@ -88,11 +88,33 @@ warn=print`,
       Array.from({ length: 2000 }, (_, i) => `x=${i} t=(t or 0)+x`).join("\n") + "\nprint(t)";
     expect(execute(obfuscateLua(big)).stdout.trim()).toBe("1999000");
   });
+  it("preserves multiple returns, false and nil through two layers", () => {
+    const result = spawnSync("lua", ["-"], {
+      input: `local a,b,c,d=(function(...)\n${obfuscateLua("return false,nil,42,...", 2)}\nend)("last")\nassert(a==false and b==nil and c==42 and d=="last")`,
+      encoding: "utf8", timeout: 5000,
+    });
+    expect(result.status).toBe(0);
+  });
+  it("normalizes invalid pass counts without returning raw source", () => {
+    for (const passes of [NaN, Infinity, -3, 1.7]) {
+      const out = obfuscateLua('return "PASS_OK"', passes);
+      expect(out).not.toContain("PASS_OK");
+      expect(execute(out).stdout.trim()).toBe("PASS_OK");
+    }
+  });
+  it("rejects a modified ciphertext permutation before running source", () => {
+    const out = obfuscateLua('print("PAYLOAD_EXECUTED")');
+    const damaged = out.replace(/(local [Il_][Il1O0_]+ =?\{)(\d+)/, "$1999999");
+    // Match compact generated declarations independently of whitespace.
+    const altered = out.replace(/(local [Il_][Il1O0_]+=\{)(\d+)/, (_m, prefix: string, value: string) => `${prefix}${Number(value) + 1}`);
+    expect(altered).not.toBe(out);
+    const result = execute(altered);
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain("PAYLOAD_EXECUTED");
+  });
 });
 
 describe("anti-tamper", () => {
-  const damage = (out: string, re: RegExp) =>
-    out.replace(re, (m) => (m === "0" ? "1" : String(Number(m) + 1)));
   it("a changed encrypted constant changes the key and the payload never runs", () => {
     const out = obfuscateLua('print("PAYLOAD_EXECUTED")');
     const damaged = out.replace(/\(\{(\d+),/, (_m, n: string) => `({${(Number(n) + 1) % 256},`);
