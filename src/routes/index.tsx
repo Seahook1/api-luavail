@@ -674,7 +674,7 @@ function ScriptPanel({
   const [days, setDays] = useState("");
   const [note, setNote] = useState("");
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const loader = `${keyless ? "" : 'script_key = "PUT_KEY_HERE"\n'}loadstring(game:HttpGet("${origin}/api/public/loader/${script.id}"))()`;
+  const loader = `${keyless ? "" : 'script_key = "PUT_KEY_HERE"\n'}loadstring(game:HttpGet("${origin}/api/public/cdn/loader/${script.id}"))()`;
 
   const loadKeys = async () => {
     const { data } = await supabase

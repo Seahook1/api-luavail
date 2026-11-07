@@ -16,9 +16,11 @@ import { Route as GetkeyScriptIdRouteImport } from './routes/getkey.$scriptId'
 import { Route as ApiPublicDiscordRouteImport } from './routes/api/public/discord'
 import { Route as ApiPublicFetchRouteImport } from './routes/api/public/fetch'
 import { Route as ApiPublicHeartbeatRouteImport } from './routes/api/public/heartbeat'
+import { Route as ApiPublicCdnPayloadRouteImport } from './routes/api/public/cdn/payload'
 import { Route as ApiPublicLoaderScriptIdRouteImport } from './routes/api/public/loader.$scriptId'
 import { Route as ApiPublicSessionInitRouteImport } from './routes/api/public/session/init'
 import { Route as ApiPublicV1ScriptsRouteImport } from './routes/api/public/v1/scripts'
+import { Route as ApiPublicCdnLoaderScriptIdRouteImport } from './routes/api/public/cdn/loader.$scriptId'
 import { Route as ApiPublicV1ScriptsIdRouteImport } from './routes/api/public/v1/scripts.$id'
 import { Route as ApiPublicV1ScriptsIdKeysRouteImport } from './routes/api/public/v1/scripts.$id.keys'
 
@@ -57,6 +59,11 @@ const ApiPublicHeartbeatRoute = ApiPublicHeartbeatRouteImport.update({
   path: '/api/public/heartbeat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicCdnPayloadRoute = ApiPublicCdnPayloadRouteImport.update({
+  id: '/api/public/cdn/payload',
+  path: '/api/public/cdn/payload',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicLoaderScriptIdRoute = ApiPublicLoaderScriptIdRouteImport.update({
   id: '/api/public/loader/$scriptId',
   path: '/api/public/loader/$scriptId',
@@ -72,6 +79,12 @@ const ApiPublicV1ScriptsRoute = ApiPublicV1ScriptsRouteImport.update({
   path: '/api/public/v1/scripts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicCdnLoaderScriptIdRoute =
+  ApiPublicCdnLoaderScriptIdRouteImport.update({
+    id: '/api/public/cdn/loader/$scriptId',
+    path: '/api/public/cdn/loader/$scriptId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicV1ScriptsIdRoute = ApiPublicV1ScriptsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -92,10 +105,12 @@ export interface FileRoutesByFullPath {
   '/api/public/discord': typeof ApiPublicDiscordRoute
   '/api/public/fetch': typeof ApiPublicFetchRoute
   '/api/public/heartbeat': typeof ApiPublicHeartbeatRoute
+  '/api/public/cdn/payload': typeof ApiPublicCdnPayloadRoute
   '/api/public/session/init': typeof ApiPublicSessionInitRoute
   '/api/public/v1/scripts': typeof ApiPublicV1ScriptsRouteWithChildren
   '/api/public/loader/$scriptId': typeof ApiPublicLoaderScriptIdRoute
   '/api/public/v1/scripts/$id': typeof ApiPublicV1ScriptsIdRouteWithChildren
+  '/api/public/cdn/loader/$scriptId': typeof ApiPublicCdnLoaderScriptIdRoute
   '/api/public/v1/scripts/$id/keys': typeof ApiPublicV1ScriptsIdKeysRoute
 }
 export interface FileRoutesByTo {
@@ -106,10 +121,12 @@ export interface FileRoutesByTo {
   '/api/public/discord': typeof ApiPublicDiscordRoute
   '/api/public/fetch': typeof ApiPublicFetchRoute
   '/api/public/heartbeat': typeof ApiPublicHeartbeatRoute
+  '/api/public/cdn/payload': typeof ApiPublicCdnPayloadRoute
   '/api/public/session/init': typeof ApiPublicSessionInitRoute
   '/api/public/v1/scripts': typeof ApiPublicV1ScriptsRouteWithChildren
   '/api/public/loader/$scriptId': typeof ApiPublicLoaderScriptIdRoute
   '/api/public/v1/scripts/$id': typeof ApiPublicV1ScriptsIdRouteWithChildren
+  '/api/public/cdn/loader/$scriptId': typeof ApiPublicCdnLoaderScriptIdRoute
   '/api/public/v1/scripts/$id/keys': typeof ApiPublicV1ScriptsIdKeysRoute
 }
 export interface FileRoutesById {
@@ -121,10 +138,12 @@ export interface FileRoutesById {
   '/api/public/discord': typeof ApiPublicDiscordRoute
   '/api/public/fetch': typeof ApiPublicFetchRoute
   '/api/public/heartbeat': typeof ApiPublicHeartbeatRoute
+  '/api/public/cdn/payload': typeof ApiPublicCdnPayloadRoute
   '/api/public/session/init': typeof ApiPublicSessionInitRoute
   '/api/public/v1/scripts': typeof ApiPublicV1ScriptsRouteWithChildren
   '/api/public/loader/$scriptId': typeof ApiPublicLoaderScriptIdRoute
   '/api/public/v1/scripts/$id': typeof ApiPublicV1ScriptsIdRouteWithChildren
+  '/api/public/cdn/loader/$scriptId': typeof ApiPublicCdnLoaderScriptIdRoute
   '/api/public/v1/scripts/$id/keys': typeof ApiPublicV1ScriptsIdKeysRoute
 }
 export interface FileRouteTypes {
@@ -137,10 +156,12 @@ export interface FileRouteTypes {
     | '/api/public/discord'
     | '/api/public/fetch'
     | '/api/public/heartbeat'
+    | '/api/public/cdn/payload'
     | '/api/public/session/init'
     | '/api/public/v1/scripts'
     | '/api/public/loader/$scriptId'
     | '/api/public/v1/scripts/$id'
+    | '/api/public/cdn/loader/$scriptId'
     | '/api/public/v1/scripts/$id/keys'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -151,10 +172,12 @@ export interface FileRouteTypes {
     | '/api/public/discord'
     | '/api/public/fetch'
     | '/api/public/heartbeat'
+    | '/api/public/cdn/payload'
     | '/api/public/session/init'
     | '/api/public/v1/scripts'
     | '/api/public/loader/$scriptId'
     | '/api/public/v1/scripts/$id'
+    | '/api/public/cdn/loader/$scriptId'
     | '/api/public/v1/scripts/$id/keys'
   id:
     | '__root__'
@@ -165,10 +188,12 @@ export interface FileRouteTypes {
     | '/api/public/discord'
     | '/api/public/fetch'
     | '/api/public/heartbeat'
+    | '/api/public/cdn/payload'
     | '/api/public/session/init'
     | '/api/public/v1/scripts'
     | '/api/public/loader/$scriptId'
     | '/api/public/v1/scripts/$id'
+    | '/api/public/cdn/loader/$scriptId'
     | '/api/public/v1/scripts/$id/keys'
   fileRoutesById: FileRoutesById
 }
@@ -180,9 +205,11 @@ export interface RootRouteChildren {
   ApiPublicDiscordRoute: typeof ApiPublicDiscordRoute
   ApiPublicFetchRoute: typeof ApiPublicFetchRoute
   ApiPublicHeartbeatRoute: typeof ApiPublicHeartbeatRoute
+  ApiPublicCdnPayloadRoute: typeof ApiPublicCdnPayloadRoute
   ApiPublicSessionInitRoute: typeof ApiPublicSessionInitRoute
   ApiPublicV1ScriptsRoute: typeof ApiPublicV1ScriptsRouteWithChildren
   ApiPublicLoaderScriptIdRoute: typeof ApiPublicLoaderScriptIdRoute
+  ApiPublicCdnLoaderScriptIdRoute: typeof ApiPublicCdnLoaderScriptIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -236,6 +263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHeartbeatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/cdn/payload': {
+      id: '/api/public/cdn/payload'
+      path: '/api/public/cdn/payload'
+      fullPath: '/api/public/cdn/payload'
+      preLoaderRoute: typeof ApiPublicCdnPayloadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/loader/$scriptId': {
       id: '/api/public/loader/$scriptId'
       path: '/api/public/loader/$scriptId'
@@ -255,6 +289,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/v1/scripts'
       fullPath: '/api/public/v1/scripts'
       preLoaderRoute: typeof ApiPublicV1ScriptsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/cdn/loader/$scriptId': {
+      id: '/api/public/cdn/loader/$scriptId'
+      path: '/api/public/cdn/loader/$scriptId'
+      fullPath: '/api/public/cdn/loader/$scriptId'
+      preLoaderRoute: typeof ApiPublicCdnLoaderScriptIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/v1/scripts/$id': {
@@ -304,9 +345,11 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicDiscordRoute: ApiPublicDiscordRoute,
   ApiPublicFetchRoute: ApiPublicFetchRoute,
   ApiPublicHeartbeatRoute: ApiPublicHeartbeatRoute,
+  ApiPublicCdnPayloadRoute: ApiPublicCdnPayloadRoute,
   ApiPublicSessionInitRoute: ApiPublicSessionInitRoute,
   ApiPublicV1ScriptsRoute: ApiPublicV1ScriptsRouteWithChildren,
   ApiPublicLoaderScriptIdRoute: ApiPublicLoaderScriptIdRoute,
+  ApiPublicCdnLoaderScriptIdRoute: ApiPublicCdnLoaderScriptIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
