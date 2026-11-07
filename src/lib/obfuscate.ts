@@ -20,16 +20,23 @@ const M = 4294967296;
 const rng = (): number => {
   const a = new Uint32Array(1);
   crypto.getRandomValues(a);
-  return a[0]!;
+  return a[0] ?? 0;
 };
 const rngRange = (max: number) => (max <= 0 ? 0 : rng() % max);
-const pick = <T>(arr: readonly T[]): T => arr[rngRange(arr.length)]!;
+const pick = <T>(arr: readonly T[]): T => {
+  const value = arr[rngRange(arr.length)];
+  if (value === undefined) throw new Error("Cannot pick from an empty collection");
+  return value;
+};
 
 const shuffle = <T>(arr: T[]): T[] => {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = rngRange(i + 1);
-    [a[i], a[j]] = [a[j]!, a[i]!];
+    const left = a[i];
+    const right = a[j];
+    if (left === undefined || right === undefined) throw new Error("Invalid shuffle index");
+    [a[i], a[j]] = [right, left];
   }
   return a;
 };
@@ -61,32 +68,36 @@ function wrapOnce(source: string): string {
   // ── keys & payload ───────────────────────────────────────────────────────
   const keyBytes = Array.from({ length: 32 }, () => rngRange(256));
   const seed =
-    (keyBytes[0]! * 16777216 + keyBytes[1]! * 65536 + keyBytes[2]! * 256 + keyBytes[3]!) % M;
+    ((keyBytes[0] ?? 0) * 16777216 + (keyBytes[1] ?? 0) * 65536 + (keyBytes[2] ?? 0) * 256 + (keyBytes[3] ?? 0)) % M;
   const plain = new TextEncoder().encode(source);
 
   const sbox = Array.from({ length: 256 }, (_, i) => i);
   {
     let j = 0;
     for (let i = 0; i < 256; i++) {
-      j = (j + sbox[i]! + keyBytes[i % 32]!) % 256;
-      [sbox[i], sbox[j]] = [sbox[j]!, sbox[i]!];
+      j = (j + (sbox[i] ?? 0) + (keyBytes[i % 32] ?? 0)) % 256;
+      [sbox[i], sbox[j]] = [sbox[j] ?? 0, sbox[i] ?? 0];
     }
   }
   const cipher = new Uint8Array(plain.length);
   let plainHash = 0;
+  // Independent prime-modulus checksum: corruption must satisfy both recurrences.
+  let plainHash2 = 1;
   {
     let a = 0,
       b = 0,
       ls = seed;
     for (let n = 0; n < plain.length; n++) {
       a = (a + 1) % 256;
-      b = (b + sbox[a]!) % 256;
-      [sbox[a], sbox[b]] = [sbox[b]!, sbox[a]!];
-      const r = sbox[(sbox[a]! + sbox[b]!) % 256]!;
+      b = (b + (sbox[a] ?? 0)) % 256;
+      [sbox[a], sbox[b]] = [sbox[b] ?? 0, sbox[a] ?? 0];
+      const r = sbox[((sbox[a] ?? 0) + (sbox[b] ?? 0)) % 256] ?? 0;
       ls = (ls * 1664525 + 1013904223) % M;
       const l = Math.floor(ls / 65536) % 256;
-      cipher[n] = (plain[n]! + r + l) % 256;
-      plainHash = roll(plainHash, plain[n]! + 1);
+      const byte = plain[n] ?? 0;
+      cipher[n] = (byte + r + l) % 256;
+      plainHash = roll(plainHash, byte + 1);
+      plainHash2 = (plainHash2 * 131 + byte + n + 1) % 65521;
     }
   }
   let dataHash = 0;
@@ -248,6 +259,8 @@ function wrapOnce(source: string): string {
       `  if ${nSC}(${nSB}(${nCH}(66),1)+1)~=${nCH}(67) then ${nT}=${nT}+1 end`,
       `  if ${nSB}(${nSC}(200,201,202),2)~=201 then ${nT}=${nT}+1 end`,
       `  if ${nFloor}(7.9)~=7 or ${nFloor}(-0.5)~=-1 then ${nT}=${nT}+1 end`,
+      `  if ${nTY}(${nLS})~=${nS9} or ${nTY}(${nSB})~=${nS9} or ${nTY}(${nSC})~=${nS9} then ${nT}=${nT}+1 end`,
+      `  do local _s=${nSC}(0,127,255) if #_s~=3 or ${nSB}(_s,1)~=0 or ${nSB}(_s,3)~=255 then ${nT}=${nT}+1 end end`,
       `  do local ${name()},${name()}=${nPC}(${nER},${nCH}(120),0) if ${nTY}(${nER})~=${nS9} or ${nTY}(${nPC})~=${nS9} then ${nT}=${nT}+1 end end`,
       `  do local _a,_b=${nPC}(${nER},${nCH}(120),0) if _a~=false or _b~=${nCH}(120) then ${nT}=${nT}+1 end end`,
       `  ${go(ST.hash)}`,
@@ -297,6 +310,7 @@ function wrapOnce(source: string): string {
       `  local _ls=(${nKB}[1]*16777216+${nKB}[2]*65536+${nKB}[3]*256+${nKB}[4])%${M}`,
       `  local _o={}`,
       `  local _hp=0`,
+      `  local _hq=1`,
       `  for _i=1,#${nData} do`,
       `    _a=(_a+1)%256`,
       `    _b=(_b+${nBox}[_a])%256`,
@@ -305,11 +319,12 @@ function wrapOnce(source: string): string {
       `    _ls=(_ls*1664525+1013904223)%${M}`,
       `    local _p=(${nSB}(${nData},_i)-_r-((_ls-_ls%65536)/65536)%256)%256`,
       `    _hp=(_hp*257+_p+1)%${M}`,
+      `    _hq=(_hq*131+_p+_i)%65521`,
       `    _o[_i]=${nCH}(_p)`,
       `  end`,
       `  ${nP}=table.concat(_o)`,
       `  ${nHP}=_hp`,
-      `  if ${nHP}~=${plainHash} then ${go(ST.fail)} else ${go(ST.load)} end`,
+      `  if ${nHP}~=${plainHash} or _hq~=${plainHash2} then ${go(ST.fail)} else ${go(ST.load)} end`,
       `end`,
     ].join("\n"),
     // load
@@ -339,13 +354,20 @@ function wrapOnce(source: string): string {
 
   // ── ciphertext literal chunks ────────────────────────────────────────────
   const CHUNK = 48 + rngRange(48);
-  const chunks: string[] = [];
+  const chunks: { slot: number; literal: string }[] = [];
   for (let off = 0; off < cipher.length; off += CHUNK)
-    chunks.push(
-      `"${Array.from(cipher.slice(off, off + CHUNK))
+    chunks.push({
+      slot: chunks.length + 1,
+      literal: `"${Array.from(cipher.slice(off, off + CHUNK))
         .map(luaByte)
         .join("")}"`,
-    );
+    });
+  // Scatter physical storage; an independently encoded permutation reassembles it.
+  const physical = shuffle(chunks);
+  const positions = new Map(physical.map((chunk, i) => [chunk.slot, i + 1]));
+  const orderMask = 1 + rngRange(65520);
+  const order = chunks.map((chunk, i) => ((positions.get(chunk.slot) ?? 0) + orderMask + (i + 1) * 7) % 65521);
+  const nPool = name(), nOrder = name();
 
   // The decoder S (hashes its own encrypted inputs into nHH for tamper-keyed derivation).
   const head = [
@@ -361,7 +383,14 @@ function wrapOnce(source: string): string {
     `  ${nHH}=(${nHH}*257+k)%${M}`,
     `  return table.concat(o)`,
     `end`,
-    `local ${nData}=table.concat({${chunks.join(",")}})`,
+    `local ${nData}`,
+    `do`,
+    `  local ${nPool}={${physical.map((chunk) => chunk.literal).join(",")}}`,
+    `  local ${nOrder}={${order.join(",")}}`,
+    `  local _out={}`,
+    `  for _i=1,#${nOrder} do _out[_i]=${nPool}[(${nOrder}[_i]-${orderMask}-_i*7)%65521] end`,
+    `  ${nData}=table.concat(_out)`,
+    `end`,
     `local ${nKS}={${keyStored.join(",")}}`,
     `local ${[nState, nF, nP, nT, nH, nKB, nBox, nHP, nSTR, nSB, nSC, nLS, nER, nPC, nTY, nMSG, nDH, nMath, nFloor, nS1, nS2, nS3, nS4, nS5, nS6, nS7, nS8, nS9, nS10, nS11, nS12].join(",")}`,
   ].join("\n");
@@ -381,7 +410,7 @@ function wrapOnce(source: string): string {
 
 export function obfuscateLua(source: string, passes = 1): string {
   let cur = source;
-  const n = Math.max(1, Math.min(4, passes));
+  const n = Number.isFinite(passes) ? Math.max(1, Math.min(4, Math.floor(passes))) : 1;
   for (let i = 0; i < n; i++) cur = wrapOnce(cur);
   return cur;
 }
