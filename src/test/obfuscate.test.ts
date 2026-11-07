@@ -107,7 +107,7 @@ warn=print`,
     const out = obfuscateLua('print("PAYLOAD_EXECUTED")');
     // Match compact generated declarations independently of whitespace.
     const altered = out.replace(
-      /(local [Il_][Il1O0_]+=\{)(\d+)/,
+      /(local [Il_][Il1O0_]+=\{)(\d+)(?=[\d,]*\}\n  local _out)/,
       (_m, prefix: string, value: string) => `${prefix}${Number(value) + 1}`,
     );
     expect(altered).not.toBe(out);

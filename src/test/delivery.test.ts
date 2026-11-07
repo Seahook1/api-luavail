@@ -68,7 +68,9 @@ HttpGet=function(self,url)
  assert(url=="${origin}/api/public/heartbeat?t=alive"); return "--ERR:Session revoked" end}
 task={spawn=function(f) f() end,wait=function(n) assert(n==30) end}
 warn=function(m) assert(m=="[Loader] Heartbeat lost; payload terminated") end
+(function()
 ${lua}
+end)()
 assert(requests==3)
 print("DELIVERY_OK")`,
       encoding: "utf8",
