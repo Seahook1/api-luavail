@@ -1,26 +1,23 @@
-// Portable Lua 5.1 / Luau obfuscator, combined pipeline.
-//
-//   obfuscateLua(source, opts)
-//     ├─ buildAntiTamper({preamble:true})  →  do <probes> end   (optional)
-//     ├─ flatten(source)                   →  do <dispatcher> end (optional, safe-bails)
-//     ├─ virtualize(...)                   →  used standalone or embedded
-//     └─ wrapOnce(source) × N              →  RC4 + decoys + env tests
+// Portable Lua 5.1 / Luau obfuscator. Anti-tamper + CFF + RC4 + optional VM.
 //
 // Non-negotiables:
-//   · anti-tamper fails LOUD (error), never silently poisons arithmetic
-//   · flatten returns its input untouched if the chunk has duplicate top-level
-//     locals, Luau-only syntax, `goto`, or any token mismatch
-//   · virtualize() returns a standalone Lua chunk — embed as
-//     `(function() <chunk> end)()` if you need to inline it
+//   · anti-tamper fails LOUD (error) — never silently poisons arithmetic
+//   · flatten bails (returns input unchanged) on anything it can't prove safe:
+//     duplicate top-level locals, `local function`, `goto`/`::label::`,
+//     unbalanced token stream
+//   · no layer changes the chunk's return value
 
-// ── shared helpers ─────────────────────────────────────────────────────────
+// ── 0. helpers ─────────────────────────────────────────────────────────────
 
 const M = 4294967296;
 
 const rng = (): number => {
-  const a = new Uint32Array(1);
-  crypto.getRandomValues(a);
-  return a[0] ?? 0;
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const a = new Uint32Array(1);
+    crypto.getRandomValues(a);
+    return a[0] ?? 0;
+  }
+  return Math.floor(Math.random() * M);
 };
 const rngRange = (max: number) => (max <= 0 ? 0 : rng() % max);
 const pick = <T>(arr: readonly T[]): T => {
@@ -44,14 +41,19 @@ const luaByte = (b: number) =>
     : `\\${String(b).padStart(3, "0")}`;
 const roll = (h: number, v: number) => (h * 257 + v) % M;
 
+// Error text camouflaged as stock Lua errors.
 const ERR_MSGS = [
-  "bad header", "invalid bytecode", "corrupt chunk",
-  "malformed input", "load failed", "unexpected symbol",
+  "attempt to index a nil value",
+  "attempt to call a nil value",
+  "attempt to perform arithmetic on a nil value",
+  "bad argument #1 (table expected, got nil)",
+  "stack overflow",
+  "unexpected symbol near '<eof>'",
 ] as const;
 
 const K_CHECKS = 15;
 
-// ── 1. statement-level control-flow flattening ─────────────────────────────
+// ── 1. statement-level CFF ─────────────────────────────────────────────────
 
 const isIdentStart = (c: string) => /[A-Za-z_]/.test(c);
 const isIdentPart  = (c: string) => /[A-Za-z0-9_]/.test(c);
@@ -115,10 +117,12 @@ function splitTopLevel(src: string): string[] | null {
       i++; continue;
     }
     if (c === ";" && depth === 0) { pushStmt(i); i++; stmtStart = i; continue; }
+    if (c === ":" && src[i + 1] === ":") return null;   // label 5.2+
     if (isIdentStart(c)) {
       let j = i + 1;
       while (j < n && isIdentPart(src[j])) j++;
       const w = src.slice(i, j);
+      if (w === "goto") return null;                     // goto 5.2+
       if (w === "function" || w === "do" || w === "repeat") depth++;
       else if (w === "then") { if (!pendingElseif) depth++; pendingElseif = false; }
       else if (w === "elseif") { pendingElseif = true; }
@@ -149,15 +153,18 @@ function findTopLevelEq(s: string, from: number): number {
   return -1;
 }
 
-function hoistLocal(stmt: string): { decls: string; body: string; names: string[] } | null {
+type Hoist = { decls: string; body: string; names: string[] } | null;
+
+function hoistLocal(stmt: string): Hoist {
   const m = /^local\s+/.exec(stmt);
   if (!m) return { decls: "", body: stmt, names: [] };
+
+  // `local function` is deliberately NOT hoisted. Hoisting changes what the
+  // body's free identifiers resolve to when a later top-level `local` is
+  // declared. That's a real semantic change, so we bail here.
+  if (/^function\s+[A-Za-z_]/.test(stmt.slice(m[0].length))) return null;
+
   const rest = stmt.slice(m[0].length);
-  const fn = /^function\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(rest);
-  if (fn) {
-    const name = fn[1]!;
-    return { decls: `local ${name}`, body: `${name}=function${rest.slice(fn[0].length)}`, names: [name] };
-  }
   const eq = findTopLevelEq(rest, 0);
   const names = (eq === -1 ? rest : rest.slice(0, eq)).trim();
   if (!/^[A-Za-z_][A-Za-z0-9_]*(\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*$/.test(names)) return null;
@@ -195,6 +202,7 @@ function flatten(source: string): string {
   };
   const states = bodies.map(() => sid());
   const doneId = sid();
+  const deadId = sid();
   const mask = 1 + rngRange(M - 1);
   const P = "__cff_";
 
@@ -205,9 +213,11 @@ function flatten(source: string): string {
   lines.push(`  local ${P}k=${mask}`);
   lines.push(`  local ${P}s=(${states[0]} + ${P}k) % ${P}M`);
   lines.push(`  while true do`);
-  lines.push(`    local ${P}q=${P}s % 7`);
-  lines.push(`    local ${P}p=(${P}q*(${P}q+1)) % 2`);
-  lines.push(`    if ${P}p==0 then`);
+  // Opaque predicate: s + s%2 is always even. Combined with the shared-mask
+  // arithmetic, a decompiler sees a conditional loop guard that is not
+  // provably constant without reasoning across the mask arithmetic.
+  lines.push(`    local ${P}g=(${P}s + ${P}s % 2) % 2`);
+  lines.push(`    if ${P}g==0 then`);
   lines.push(`      local ${P}d=(${P}s-${P}k) % ${P}M`);
 
   bodies.forEach((body, idx) => {
@@ -220,6 +230,9 @@ function flatten(source: string): string {
 
   lines.push(`      elseif ${P}d==${doneId} then`);
   lines.push(`        return`);
+  // Dead branch: never reachable, but a decompiler has to prove it.
+  lines.push(`      elseif ${P}d==${deadId} then`);
+  lines.push(`        error("${pick(ERR_MSGS)}",0)`);
   lines.push(`      else`);
   lines.push(`        error("${pick(ERR_MSGS)}",0)`);
   lines.push(`      end`);
@@ -231,7 +244,7 @@ function flatten(source: string): string {
   return lines.join("\n");
 }
 
-// ── 2. anti-tamper (fails loud, never poisons) ─────────────────────────────
+// ── 2. anti-tamper ────────────────────────────────────────────────────────
 
 interface AntiTamperOpts {
   preamble?: boolean;
@@ -242,43 +255,62 @@ interface AntiTamperOpts {
 function buildAntiTamper(opts: AntiTamperOpts = {}): string {
   const { preamble = false, onFail = "error", callback = "onTamper" } = opts;
 
-  const sbox = Array.from({ length: 8 }, () => 100 + Math.floor(Math.random() * 900));
-  const xorKey = 1 + Math.floor(Math.random() * 255);
-  const expected = sbox.map(v => ((v * 7 + 13) ^ xorKey) & 0xff);
+  // Probes are in printable-ASCII range so string.char cannot truncate.
+  const probes = Array.from({ length: 8 }, () => 32 + Math.floor(Math.random() * 95));
+  const ks = 1 + Math.floor(Math.random() * 255);
+  const expect = probes.map(v => (v * 7 + 13 + ks) % 256);
 
-  const handleFail = onFail === "callback"
-    ? `${callback}({ok=false, failures=__F}) error("integrity check failed: " .. __F[1], 0)`
-    : `error("integrity check failed: " .. __F[1], 0)`;
+  const fail = onFail === "callback"
+    ? `${callback}({ok=false, failures=__F}) error(__F[1],0)`
+    : `error(__F[1],0)`;
 
   const body = [
+    // Snapshot identities we care about before any user code runs.
     `local __F={}`,
     `local __byte,__char=string.byte,string.char`,
-    `local __orig={}`,
-    `__orig.pcall=pcall`,
-    `__orig.setmeta=setmetatable`,
-    `__orig.sbyte=string.byte`,
-    `__orig.loadstring=loadstring or load`,
-    `__orig.rawget=rawget`,
-    `local __probes={${sbox.join(",")}}`,
-    `local __expect={${expected.join(",")}}`,
-    `local __ks=${xorKey}`,
+    `local __orig={pcall=pcall,setmeta=setmetatable,sbyte=string.byte,`,
+    `  loadstring=loadstring or load,rawget=rawget,rawset=rawset,`,
+    `  tostring=tostring,newproxy=rawget(_G or {},"newproxy")}`,
+    // KAT on string.byte / string.char round-trip.
+    `local __probes={${probes.join(",")}}`,
+    `local __expect={${expect.join(",")}}`,
+    `local __ks=${ks}`,
     `for i=1,#__probes do`,
     `  local v=__byte(__char(__probes[i]),1)`,
-    `  if (((v*7+13)~__ks)%256)~=__expect[i] then __F[#__F+1]="string.byte detoured" break end`,
+    `  if ((v*7+13+__ks)%256)~=__expect[i] then`,
+    `    __F[#__F+1]="${pick(ERR_MSGS)}" break`,
+    `  end`,
     `end`,
-    `if __orig.pcall~=pcall then __F[#__F+1]="pcall replaced" end`,
-    `if __orig.setmeta~=setmetatable then __F[#__F+1]="setmetatable replaced" end`,
-    `if __orig.sbyte~=string.byte then __F[#__F+1]="string.byte replaced" end`,
-    `if __orig.loadstring~=(loadstring or load) then __F[#__F+1]="loadstring replaced" end`,
-    `if __orig.rawget~=rawget then __F[#__F+1]="rawget replaced" end`,
+    // Identity checks — a wrapped function is a different value.
+    `if __orig.pcall~=pcall then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
+    `if __orig.setmeta~=setmetatable then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
+    `if __orig.sbyte~=string.byte then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
+    `if __orig.loadstring~=(loadstring or load) then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
+    `if __orig.rawget~=rawget then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
+    `if __orig.rawset~=rawset then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
+    `if __orig.tostring~=tostring then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
+    // Semantics KATs.
     `do local ok,err=pcall(function() error("__probe") end)`,
-    `   if ok or err~="__probe" then __F[#__F+1]="pcall semantics changed" end end`,
-    `do local d=rawget(_G or {}, "debug")`,
+    `   if ok or err~="__probe" then __F[#__F+1]="${pick(ERR_MSGS)}" end end`,
+    `if tostring(nil)~="nil" then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
+    `do local ok,f=pcall(loadstring,"return 1+1")`,
+    `   if not ok or type(f)~="function" or f()~=2 then`,
+    `     __F[#__F+1]="${pick(ERR_MSGS)}"`,
+    `   end end`,
+    `do local t={} local ok=pcall(setmetatable,t,{__index=function() return 7 end})`,
+    `   if not ok or t.x~=7 then __F[#__F+1]="${pick(ERR_MSGS)}" end end`,
+    // newproxy is Lua 5.1 only. If present, it must still return userdata.
+    `if __orig.newproxy then`,
+    `  local ok,u=pcall(__orig.newproxy,true)`,
+    `  if ok and type(u)~="userdata" then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
+    `end`,
+    // debug.getinfo must still report C for C functions.
+    `do local d=rawget(_G or {},"debug")`,
     `   if d and d.getinfo then`,
     `     local ok,info=pcall(d.getinfo,d.getinfo,"S")`,
-    `     if ok and info and info.what~="C" then __F[#__F+1]="debug.getinfo hooked" end`,
+    `     if ok and info and info.what~="C" then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
     `   end end`,
-    `if #__F>0 then ${handleFail} end`,
+    `if #__F>0 then ${fail} end`,
   ];
 
   return preamble
@@ -286,15 +318,25 @@ function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     : [...body, `return {ok=true, failures=__F}`].join("\n");
 }
 
-// ── 3. mini-VM virtualizer ─────────────────────────────────────────────────
+// ── 3. mini-VM (16 opcodes) ────────────────────────────────────────────────
 
 type MiniOp =
   | { op: "LOADK";     dst: number; kidx: number }
+  | { op: "LOADBOOL";  dst: number; value: boolean }
   | { op: "MOVE";      dst: number; src: number }
   | { op: "GETGLOBAL"; dst: number; name: string }
+  | { op: "SETGLOBAL"; src: number; name: string }
+  | { op: "GETTABLE";  dst: number; tbl: number; key: number }
+  | { op: "SETTABLE";  tbl: number; key: number; val: number }
+  | { op: "NEWTABLE";  dst: number }
+  | { op: "ADD";       dst: number; a: number; b: number }
+  | { op: "SUB";       dst: number; a: number; b: number }
+  | { op: "EQ";        dst: number; a: number; b: number }
+  | { op: "LT";        dst: number; a: number; b: number }
   | { op: "CALL";      base: number; argc: number }
+  | { op: "RETURN";    src: number }
   | { op: "JUMP";      offset: number }
-  | { op: "RETURN";    src: number };
+  | { op: "JMPIF";     cond: number; offset: number };
 
 type Const = number | string | boolean | null;
 
@@ -312,24 +354,24 @@ function uniqOpIds(count: number): number[] {
 }
 
 function virtualize(ops: MiniOp[], consts: Const[]): string {
-  const ids = uniqOpIds(6);
+  const ids = uniqOpIds(16);
   const OP = {
-    LOADK: ids[0]!, MOVE: ids[1]!, GETGLOBAL: ids[2]!,
-    CALL: ids[3]!, JUMP: ids[4]!, RETURN: ids[5]!,
+    LOADK: ids[0]!, LOADBOOL: ids[1]!, MOVE: ids[2]!, GETGLOBAL: ids[3]!,
+    SETGLOBAL: ids[4]!, GETTABLE: ids[5]!, SETTABLE: ids[6]!, NEWTABLE: ids[7]!,
+    ADD: ids[8]!, SUB: ids[9]!, EQ: ids[10]!, LT: ids[11]!,
+    CALL: ids[12]!, RETURN: ids[13]!, JUMP: ids[14]!, JMPIF: ids[15]!,
   } as const;
 
   const stride = 4 + rngRange(4);
   const key = Array.from({ length: 1 + rngRange(8) }, () => 1 + rngRange(255));
 
-  const nameIndex = new Map<string, number>();
+  const nameIdx = new Map<string, number>();
   const pushConst = (v: Const) => {
-    const i = consts.length;
-    consts.push(v);
-    return i;
+    const i = consts.length; consts.push(v); return i;
   };
   for (const op of ops) {
-    if (op.op === "GETGLOBAL" && !nameIndex.has(op.name)) {
-      nameIndex.set(op.name, pushConst(op.name));
+    if ((op.op === "GETGLOBAL" || op.op === "SETGLOBAL") && !nameIdx.has(op.name)) {
+      nameIdx.set(op.name, pushConst(op.name));
     }
   }
 
@@ -340,51 +382,72 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
     switch (op.op) {
       case "LOADK":
         rec[0] = OP.LOADK; rec[1] = op.dst;
-        rec[2] = op.kidx & 0xff; rec[3] = (op.kidx >> 8) & 0xff;
-        break;
+        rec[2] = op.kidx & 0xff; rec[3] = (op.kidx >> 8) & 0xff; break;
+      case "LOADBOOL":
+        rec[0] = OP.LOADBOOL; rec[1] = op.dst; rec[2] = op.value ? 1 : 0; break;
       case "MOVE":
-        rec[0] = OP.MOVE; rec[1] = op.dst; rec[2] = op.src;
-        break;
+        rec[0] = OP.MOVE; rec[1] = op.dst; rec[2] = op.src; break;
       case "GETGLOBAL": {
-        const ki = nameIndex.get(op.name)!;
+        const ki = nameIdx.get(op.name)!;
         rec[0] = OP.GETGLOBAL; rec[1] = op.dst;
-        rec[2] = ki & 0xff; rec[3] = (ki >> 8) & 0xff;
-        break;
+        rec[2] = ki & 0xff; rec[3] = (ki >> 8) & 0xff; break;
       }
+      case "SETGLOBAL": {
+        const ki = nameIdx.get(op.name)!;
+        rec[0] = OP.SETGLOBAL; rec[1] = op.src;
+        rec[2] = ki & 0xff; rec[3] = (ki >> 8) & 0xff; break;
+      }
+      case "GETTABLE":
+        rec[0] = OP.GETTABLE; rec[1] = op.dst; rec[2] = op.tbl; rec[3] = op.key; break;
+      case "SETTABLE":
+        rec[0] = OP.SETTABLE; rec[1] = op.tbl; rec[2] = op.key; rec[3] = op.val; break;
+      case "NEWTABLE":
+        rec[0] = OP.NEWTABLE; rec[1] = op.dst; break;
+      case "ADD":
+        rec[0] = OP.ADD; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
+      case "SUB":
+        rec[0] = OP.SUB; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
+      case "EQ":
+        rec[0] = OP.EQ; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
+      case "LT":
+        rec[0] = OP.LT; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
       case "CALL":
-        rec[0] = OP.CALL; rec[1] = op.base; rec[2] = op.argc;
-        break;
+        rec[0] = OP.CALL; rec[1] = op.base; rec[2] = op.argc; break;
+      case "RETURN":
+        rec[0] = OP.RETURN; rec[1] = op.src; break;
       case "JUMP": {
         const d = op.offset & 0xffff;
-        rec[0] = OP.JUMP;
-        rec[2] = d & 0xff; rec[3] = (d >> 8) & 0xff;
-        break;
+        rec[0] = OP.JUMP; rec[2] = d & 0xff; rec[3] = (d >> 8) & 0xff; break;
       }
-      case "RETURN":
-        rec[0] = OP.RETURN; rec[1] = op.src;
-        break;
+      case "JMPIF": {
+        const d = op.offset & 0xffff;
+        rec[0] = OP.JMPIF; rec[1] = op.cond;
+        rec[2] = d & 0xff; rec[3] = (d >> 8) & 0xff; break;
+      }
     }
     raw.push(...rec);
   }
 
   const masked = raw.map((b, i) => (b + key[i % key.length]!) % 256);
 
+  const OPS = `{LOADK=${OP.LOADK},LOADBOOL=${OP.LOADBOOL},MOVE=${OP.MOVE},` +
+    `GETGLOBAL=${OP.GETGLOBAL},SETGLOBAL=${OP.SETGLOBAL},` +
+    `GETTABLE=${OP.GETTABLE},SETTABLE=${OP.SETTABLE},NEWTABLE=${OP.NEWTABLE},` +
+    `ADD=${OP.ADD},SUB=${OP.SUB},EQ=${OP.EQ},LT=${OP.LT},` +
+    `CALL=${OP.CALL},RETURN=${OP.RETURN},JUMP=${OP.JUMP},JMPIF=${OP.JMPIF}}`;
+
   return [
     `local __K={${consts.map(luaLit).join(",")}}`,
-    `local __OPS={LOADK=${OP.LOADK},MOVE=${OP.MOVE},GETGLOBAL=${OP.GETGLOBAL},CALL=${OP.CALL},JUMP=${OP.JUMP},RETURN=${OP.RETURN}}`,
+    `local __OPS=${OPS}`,
     `local __KEY="${key.map(luaByte).join("")}"`,
     `local __BC="${masked.map(luaByte).join("")}"`,
     `local __S=${stride}`,
-    `local __byte,__char=string.byte,string.char`,
+    `local __byte=string.byte`,
     `local __unpack=table.unpack or unpack`,
     `local __env=(getfenv and getfenv(1)) or _G`,
     `local __code={}`,
-    `do`,
-    `  local kl=#__KEY`,
-    `  for i=1,#__BC do`,
-    `    __code[i]=(__byte(__BC,i)-__byte(__KEY,(i-1)%kl+1))%256`,
-    `  end`,
-    `end`,
+    `do local kl=#__KEY`,
+    `   for i=1,#__BC do __code[i]=(__byte(__BC,i)-__byte(__KEY,(i-1)%kl+1))%256 end end`,
     `return function(...)`,
     `  local R,pc={},1`,
     `  while true do`,
@@ -392,35 +455,35 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
     `    local a=__code[pc+1] or 0`,
     `    local b=__code[pc+2] or 0`,
     `    local c=__code[pc+3] or 0`,
-    `    if op==__OPS.LOADK then`,
-    `      R[a]=__K[b+c*256]`,
-    `      pc=pc+__S`,
-    `    elseif op==__OPS.MOVE then`,
-    `      R[a]=R[b]`,
-    `      pc=pc+__S`,
-    `    elseif op==__OPS.GETGLOBAL then`,
-    `      R[a]=__env[__K[b+c*256]]`,
-    `      pc=pc+__S`,
+    `    if op==__OPS.LOADK then R[a]=__K[b+c*256] pc=pc+__S`,
+    `    elseif op==__OPS.LOADBOOL then R[a]=(b~=0) pc=pc+__S`,
+    `    elseif op==__OPS.MOVE then R[a]=R[b] pc=pc+__S`,
+    `    elseif op==__OPS.GETGLOBAL then R[a]=__env[__K[b+c*256]] pc=pc+__S`,
+    `    elseif op==__OPS.SETGLOBAL then __env[__K[b+c*256]]=R[a] pc=pc+__S`,
+    `    elseif op==__OPS.GETTABLE then R[a]=R[b][R[c]] pc=pc+__S`,
+    `    elseif op==__OPS.SETTABLE then R[a][R[b]]=R[c] pc=pc+__S`,
+    `    elseif op==__OPS.NEWTABLE then R[a]={} pc=pc+__S`,
+    `    elseif op==__OPS.ADD then R[a]=R[b]+R[c] pc=pc+__S`,
+    `    elseif op==__OPS.SUB then R[a]=R[b]-R[c] pc=pc+__S`,
+    `    elseif op==__OPS.EQ then R[a]=(R[b]==R[c]) pc=pc+__S`,
+    `    elseif op==__OPS.LT then R[a]=(R[b]<R[c]) pc=pc+__S`,
     `    elseif op==__OPS.CALL then`,
-    `      local args={}`,
-    `      for j=1,b do args[j]=R[a+j] end`,
-    `      R[a]=R[a](__unpack(args))`,
-    `      pc=pc+__S`,
+    `      local args={} for j=1,b do args[j]=R[a+j] end`,
+    `      R[a]=R[a](__unpack(args)) pc=pc+__S`,
+    `    elseif op==__OPS.RETURN then return R[a]`,
     `    elseif op==__OPS.JUMP then`,
-    `      local d=b+c*256`,
-    `      if d>=32768 then d=d-65536 end`,
+    `      local d=b+c*256 if d>=32768 then d=d-65536 end`,
     `      pc=pc+d*__S`,
-    `    elseif op==__OPS.RETURN then`,
-    `      return R[a]`,
-    `    else`,
-    `      error("bad opcode",0)`,
-    `    end`,
+    `    elseif op==__OPS.JMPIF then`,
+    `      local d=b+c*256 if d>=32768 then d=d-65536 end`,
+    `      if R[a] then pc=pc+d*__S else pc=pc+__S end`,
+    `    else error("bad opcode",0) end`,
     `  end`,
     `end`,
   ].join("\n");
 }
 
-// ── 4. RC4 + decoy + env-test wrapper (original, preserved verbatim) ──────
+// ── 4. RC4 + decoy + env-test wrapper (logic unchanged) ──────────────────
 
 function wrapOnce(source: string): string {
   const used = new Set<string>();
@@ -434,11 +497,8 @@ function wrapOnce(source: string): string {
   };
 
   const keyBytes = Array.from({ length: 32 }, () => rngRange(256));
-  const seed =
-    ((keyBytes[0] ?? 0) * 16777216 +
-      (keyBytes[1] ?? 0) * 65536 +
-      (keyBytes[2] ?? 0) * 256 +
-      (keyBytes[3] ?? 0)) % M;
+  const seed = ((keyBytes[0] ?? 0) * 16777216 + (keyBytes[1] ?? 0) * 65536 +
+                (keyBytes[2] ?? 0) * 256 + (keyBytes[3] ?? 0)) % M;
 
   const decoyText = (): string => {
     const lines: string[] = [];
@@ -469,8 +529,7 @@ function wrapOnce(source: string): string {
     }
   }
   const cipher = new Uint8Array(plain.length);
-  let plainHash = 0;
-  let plainHash2 = 1;
+  let plainHash = 0, plainHash2 = 1;
   {
     let a = 0, b = 0, ls = seed;
     for (let n = 0; n < plain.length; n++) {
@@ -515,10 +574,7 @@ function wrapOnce(source: string): string {
 
   const ids = new Set<number>();
   const sid = () => {
-    for (;;) {
-      const v = 100 + rngRange(900000);
-      if (!ids.has(v)) { ids.add(v); return v; }
-    }
+    for (;;) { const v = 100 + rngRange(900000); if (!ids.has(v)) { ids.add(v); return v; } }
   };
   const ST = {
     names: sid(), env: sid(), hash: sid(), key: sid(), ksa: sid(),
@@ -529,15 +585,11 @@ function wrapOnce(source: string): string {
   const is = (id: number) => `(${nState}-${stateMask})%${M}==${id}`;
 
   const junk = (): string => {
-    const t = rngRange(4);
-    const p = rngRange(9000) + 2;
+    const t = rngRange(4), p = rngRange(9000) + 2;
     const a = name(), b = name(), c = name();
-    if (t === 0)
-      return `do local ${a}=${p} if (${a}*(${a}+1))%2==1 then ${nState}=${rngRange(999)} ${nER}(${nMSG},0) end end`;
-    if (t === 1)
-      return `if (${p}*${p}+${p})%2==1 then local function ${a}(${b},${c}) for ${name()}=1,${b} do ${c}=(${c}*${rngRange(97) + 3}+${rngRange(1000)})%${M} end return ${c} end ${a}(${rngRange(50)},${rngRange(9999)}) end`;
-    if (t === 2)
-      return `do local ${a},${b}=${rngRange(9999)},${rngRange(9999)} for ${c}=1,${rngRange(4) + 1} do ${a}=(${a}*${b}+${c})%${rngRange(60000) + 7} end end`;
+    if (t === 0) return `do local ${a}=${p} if (${a}*(${a}+1))%2==1 then ${nState}=${rngRange(999)} ${nER}(${nMSG},0) end end`;
+    if (t === 1) return `if (${p}*${p}+${p})%2==1 then local function ${a}(${b},${c}) for ${name()}=1,${b} do ${c}=(${c}*${rngRange(97) + 3}+${rngRange(1000)})%${M} end return ${c} end ${a}(${rngRange(50)},${rngRange(9999)}) end`;
+    if (t === 2) return `do local ${a},${b}=${rngRange(9999)},${rngRange(9999)} for ${c}=1,${rngRange(4) + 1} do ${a}=(${a}*${b}+${c})%${rngRange(60000) + 7} end end`;
     return `if ${p}%${p}~=0 then local ${a}={${rngRange(99)},${rngRange(99)}} while true do ${a}[1]=${a}[1]+1 end end`;
   };
   const junks = (n: number) => Array.from({ length: n }, junk).join("\n");
@@ -568,18 +620,15 @@ function wrapOnce(source: string): string {
   });
 
   const branches: string[] = [
-    [
-      `if ${is(ST.names)} then`, junk(), ...names.map((n) => `  ${n}`),
+    [`if ${is(ST.names)} then`, junk(), ...names.map((n) => `  ${n}`),
       `  ${nSTR}=${nG}[${nS1}]`, `  ${nSB}=${nSTR}[${nS2}]`, `  ${nSC}=${nSTR}[${nS3}]`,
       `  ${nLS}=${nG}[${nS4}] or ${nG}[${nS5}]`, `  ${nER}=${nG}[${nS6}]`,
       `  ${nPC}=${nG}[${nS7}]`, `  ${nTY}=${nG}[${nS8}]`, `  ${nMSG}=${nS10}`,
       `  ${nMath}=${nG}[${nS11}]`, `  ${nFloor}=${nMath}[${nS12}]`,
       `  ${nTS}=${nG}[${nS13}]`, `  ${nSL}=${nG}[${nS14}]`, `  ${nRQ}=${nG}[${nS15}]`,
       `  ${nTBL}=${nG}[${nS16}]`, `  ${nTC}=${nTBL}[${nS17}]`, `  ${nSRP}=${nSTR}[${nS18}]`,
-      `  ${go(ST.env)}`, `end`,
-    ].join("\n"),
-    [
-      `if ${is(ST.env)} then`, junk(), `  ${nT}=${K_CHECKS}`,
+      `  ${go(ST.env)}`, `end`].join("\n"),
+    [`if ${is(ST.env)} then`, junk(), `  ${nT}=${K_CHECKS}`,
       `  if ${nSB}(${nSC}(65),1)==65 then ${nT}=${nT}-1 end`,
       `  if ${nSC}(${nSB}(${nSC}(66),1)+1)==${nSC}(67) then ${nT}=${nT}-1 end`,
       `  if ${nSB}(${nSC}(200,201,202),2)==201 then ${nT}=${nT}-1 end`,
@@ -595,39 +644,30 @@ function wrapOnce(source: string): string {
       `  if ${nSRP}('x',3)=='xxx' then ${nT}=${nT}-1 end`,
       `  do local _ok,_f=${nPC}(${nLS},'return 1') if _ok and ${nTY}(_f)==${nS9} and _f()==1 then ${nT}=${nT}-1 end end`,
       `  do local _ok2,_e2=${nPC}(${nER},'x',0) if _ok2==false and _e2=='x' then ${nT}=${nT}-1 end end`,
-      `  ${go(ST.hash)}`, `end`,
-    ].join("\n"),
-    [
-      `if ${is(ST.hash)} then`, junk(),
+      `  ${go(ST.hash)}`, `end`].join("\n"),
+    [`if ${is(ST.hash)} then`, junk(),
       `  ${nH}=(${nDH}*3+${nHH}*5+${nT}*${T_SALT}+${salt})%${M}`,
-      `  ${go(ST.key)}`, `end`,
-    ].join("\n"),
-    [
-      `if ${is(ST.key)} then`, junk(), `  ${nKB}={}`,
+      `  ${go(ST.key)}`, `end`].join("\n"),
+    [`if ${is(ST.key)} then`, junk(), `  ${nKB}={}`,
       `  for _i=1,32 do`,
       `    local _m=(${nH}*(_i+13)+40503)%${M}`,
       `    ${nKB}[_i]=(${nKS}[_i]-(((_m-_m%256)/256)%256))%256`,
       `  end`,
-      `  ${go(ST.ksa)}`, `end`,
-    ].join("\n"),
-    [
-      `if ${is(ST.ksa)} then`, junk(), `  ${nBox}={}`,
+      `  ${go(ST.ksa)}`, `end`].join("\n"),
+    [`if ${is(ST.ksa)} then`, junk(), `  ${nBox}={}`,
       `  for _i=0,255 do ${nBox}[_i]=_i end`,
       `  local _j=0`,
       `  for _i=0,255 do`,
       `    _j=(_j+${nBox}[_i]+${nKB}[_i%32+1])%256`,
       `    ${nBox}[_i],${nBox}[_j]=${nBox}[_j],${nBox}[_i]`,
       `  end`,
-      `  ${go(ST.dec)}`, `end`,
-    ].join("\n"),
-    [
-      `if ${is(ST.dec)} then`, junk(),
+      `  ${go(ST.dec)}`, `end`].join("\n"),
+    [`if ${is(ST.dec)} then`, junk(),
       `  local _a,_b=0,0`,
       `  local _ls=(${nKB}[1]*16777216+${nKB}[2]*65536+${nKB}[3]*256+${nKB}[4])%${M}`,
-      `  local _o={}`, `  local _hp=0`, `  local _hq=1`,
+      `  local _o={} local _hp=0 local _hq=1`,
       `  for _i=1,#${nData} do`,
-      `    _a=(_a+1)%256`,
-      `    _b=(_b+${nBox}[_a])%256`,
+      `    _a=(_a+1)%256 _b=(_b+${nBox}[_a])%256`,
       `    ${nBox}[_a],${nBox}[_b]=${nBox}[_b],${nBox}[_a]`,
       `    local _r=${nBox}[(${nBox}[_a]+${nBox}[_b])%256]`,
       `    _ls=(_ls*1664525+1013904223)%${M}`,
@@ -636,26 +676,21 @@ function wrapOnce(source: string): string {
       `    _hq=(_hq*131+_p+_i)%65521`,
       `    _o[_i]=${nCH}(_p)`,
       `  end`,
-      `  ${nP}=table.concat(_o)`, `  ${nHP}=_hp`,
-      `  if ${nHP}~=${plainHash} or _hq~=${plainHash2} then ${go(ST.fail)} else ${go(ST.load)} end`,
-      `end`,
-    ].join("\n"),
-    [
-      `if ${is(ST.load)} then`, junk(),
+      `  ${nP}=table.concat(_o)`,
+      `  if _hp~=${plainHash} or _hq~=${plainHash2} then ${go(ST.fail)} else ${go(ST.load)} end`,
+      `end`].join("\n"),
+    [`if ${is(ST.load)} then`, junk(),
       `  ${nF}=${nLS}(${nP})`,
       `  if not ${nF} then ${go(ST.fail)} else ${go(ST.run)} end`,
-      `end`,
-    ].join("\n"),
+      `end`].join("\n"),
     [`if ${is(ST.run)} then`, junk(), `  ${go(ST.done)}`, `end`].join("\n"),
     [`if ${is(ST.fail)} then`, `  ${nER}(${nMSG},0)`, `end`].join("\n"),
     ...Array.from({ length: 6 }, () => {
       const d = sid();
-      return [
-        `if ${is(d)} then`, junk(),
+      return [`if ${is(d)} then`, junk(),
         `  for _i=1,#${nData} do ${nKB}[_i%32+1]=(${nKB}[_i%32+1]+${nSB}(${nData},_i))%256 end`,
         `  ${go(rngRange(2) ? ST.fail : d)}`,
-        `end`,
-      ].join("\n");
+        `end`].join("\n");
     }),
   ];
 
@@ -664,18 +699,14 @@ function wrapOnce(source: string): string {
   while (off < cipher.length) {
     const size = 32 + rngRange(80);
     const slice = cipher.slice(off, off + size);
-    chunks.push({
-      slot: chunks.length + 1,
-      literal: `"${Array.from(slice).map(luaByte).join("")}"`,
-    });
+    chunks.push({ slot: chunks.length + 1, literal: `"${Array.from(slice).map(luaByte).join("")}"` });
     off += size;
   }
   const physical = shuffle(chunks);
   const positions = new Map(physical.map((chunk, i) => [chunk.slot, i + 1]));
   const orderMask = 1 + rngRange(M - 1);
-  const order = chunks.map(
-    (chunk, i) => ((positions.get(chunk.slot) ?? 0) + orderMask + (i + 1) * 7) % M,
-  );
+  const order = chunks.map((chunk, i) =>
+    ((positions.get(chunk.slot) ?? 0) + orderMask + (i + 1) * 7) % M);
   const nPool = name(), nOrder = name(), nSB2 = name();
 
   const head = [
@@ -685,7 +716,7 @@ function wrapOnce(source: string): string {
     `local ${nData}`,
     `local ${nDH}=0`,
     `do`,
-    `  local ${nPool}={${physical.map((chunk) => chunk.literal).join(",")}}`,
+    `  local ${nPool}={${physical.map(c => c.literal).join(",")}}`,
     `  local ${nOrder}={${order.join(",")}}`,
     `  local _out={}`,
     `  for _i=1,#${nOrder} do _out[_i]=${nPool}[(${nOrder}[_i]-${orderMask}-_i*7)%${M}] end`,
@@ -723,38 +754,27 @@ function wrapOnce(source: string): string {
 // ── 5. combined entry ──────────────────────────────────────────────────────
 
 export interface ObfuscateOpts {
-  passes?: number;       // wrapOnce iterations (1..4), default 1
-  flatten?: boolean;     // default true  — safe-bails on unflattenable source
-  antiTamper?: boolean;  // default true  — prepended as `do <probes> end`
+  passes?: number;
+  flatten?: boolean;
+  antiTamper?: boolean;
+  mode?: "full" | "wrap" | "cff" | "none";
 }
 
 export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}): string {
   const o: ObfuscateOpts = typeof opts === "number" ? { passes: opts } : opts;
   const n = Math.max(1, Math.min(4, Math.floor(o.passes ?? 1)));
 
+  const mode = o.mode ?? "full";
+  const useAnti   = o.antiTamper ?? (mode === "full" || mode === "cff");
+  const useCff    = o.flatten    ?? (mode === "full" || mode === "cff");
+  const useWrap   = mode !== "cff" && mode !== "none";
+
   let cur = source;
-
-  // 1. Anti-tamper as a single `do...end` block — runs before user code and
-  //    lives *inside* the RC4 envelope, so removing it requires breaking the
-  //    wrapper first. Fails loud: `error("integrity check failed: …", 0)`.
-  if (o.antiTamper !== false) {
-    cur = buildAntiTamper({ preamble: true }) + "\n" + cur;
-  }
-
-  // 2. Statement-level CFF. Bails unchanged if it sees duplicate top-level
-  //    locals, Luau-only syntax, `goto`, or any token mismatch — so the
-  //    anti-tamper is preserved even when flattening itself is skipped.
-  if (o.flatten !== false) {
-    cur = flatten(cur);
-  }
-
-  // 3. RC4 + decoy + env-test wrapper, applied N times.
-  for (let i = 0; i < n; i++) cur = wrapOnce(cur);
-
+  if (useAnti) cur = buildAntiTamper({ preamble: true }) + "\n" + cur;
+  if (useCff)  cur = flatten(cur);
+  if (useWrap) for (let i = 0; i < n; i++) cur = wrapOnce(cur);
   return cur;
 }
-
-// ── 6. re-exports for callers who virtualize ahead of time ────────────────
 
 export type { MiniOp, Const };
 export { virtualize, buildAntiTamper, flatten };
