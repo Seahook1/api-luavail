@@ -1,13 +1,4 @@
-// Portable Lua 5.1 / Luau obfuscator. Anti-tamper + CFF + RC4 + optional VM.
-//
-// Non-negotiables:
-//   · anti-tamper fails LOUD (error) — never silently poisons arithmetic
-//   · flatten bails (returns input unchanged) on anything it can't prove safe:
-//     duplicate top-level locals, `local function`, `goto`/`::label::`,
-//     unbalanced token stream
-//   · no layer changes the chunk's return value
-
-// ── 0. helpers ─────────────────────────────────────────────────────────────
+// Portable Lua 5.1 / Luau obfuscator. Anti-tamper + CFF + RC4 + minify.
 
 const M = 4294967296;
 
@@ -41,7 +32,6 @@ const luaByte = (b: number) =>
     : `\\${String(b).padStart(3, "0")}`;
 const roll = (h: number, v: number) => (h * 257 + v) % M;
 
-// Error text camouflaged as stock Lua errors.
 const ERR_MSGS = [
   "attempt to index a nil value",
   "attempt to call a nil value",
@@ -53,7 +43,7 @@ const ERR_MSGS = [
 
 const K_CHECKS = 15;
 
-// ── 1. statement-level CFF ─────────────────────────────────────────────────
+// ── 0. tokenizer primitives (shared by flatten + minify) ─────────────────
 
 const isIdentStart = (c: string) => /[A-Za-z_]/.test(c);
 const isIdentPart  = (c: string) => /[A-Za-z0-9_]/.test(c);
@@ -83,6 +73,84 @@ function skipQuoted(src: string, i: number): number {
   return -1;
 }
 
+// ── 1. minifier ───────────────────────────────────────────────────────────
+//
+// Strips comments, collapses whitespace, and removes spaces that are not
+// needed between adjacent tokens. Preserves string literals and long
+// brackets exactly. Idempotent.
+//
+// The only cases where a space IS required between two non-whitespace
+// characters:
+//   · word char followed by word char  (would merge into one token)
+//   · `-` followed by `-`              (would start a comment)
+//   · digit followed by `.`            (would merge into a malformed number)
+// Every other space is dropped.
+
+function minifyLua(src: string): string {
+  const out: string[] = [];
+  const n = src.length;
+  let i = 0;
+  let pending = false;
+
+  const lastChar = (): string => {
+    const last = out[out.length - 1];
+    return last ? last[last.length - 1]! : "";
+  };
+  const isWord = (c: string) => /[A-Za-z0-9_]/.test(c);
+  const needSpace = (a: string, b: string): boolean => {
+    if (!a || !b) return false;
+    if (isWord(a) && isWord(b)) return true;
+    if (a === "-" && b === "-") return true;
+    if (/[0-9]/.test(a) && b === ".") return true;
+    return false;
+  };
+
+  while (i < n) {
+    const c = src[i]!;
+
+    if (c === " " || c === "\t" || c === "\r" || c === "\n") {
+      pending = true;
+      i++;
+      continue;
+    }
+    if (c === "-" && src[i + 1] === "-") {
+      if (src[i + 2] === "[") {
+        const close = findLongClose(src, i + 2);
+        if (close !== -1) { i = close; pending = true; continue; }
+      }
+      while (i < n && src[i] !== "\n") i++;
+      pending = true;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      if (pending && needSpace(lastChar(), c)) out.push(" ");
+      const start = i;
+      i = skipQuoted(src, i);
+      if (i < 0) throw new Error("unterminated string in minify");
+      out.push(src.slice(start, i));
+      pending = false;
+      continue;
+    }
+    if (c === "[") {
+      const close = findLongClose(src, i);
+      if (close !== -1) {
+        if (pending && needSpace(lastChar(), c)) out.push(" ");
+        out.push(src.slice(i, close));
+        i = close;
+        pending = false;
+        continue;
+      }
+    }
+    if (pending && needSpace(lastChar(), c)) out.push(" ");
+    out.push(c);
+    pending = false;
+    i++;
+  }
+  return out.join("");
+}
+
+// ── 2. statement-level CFF ────────────────────────────────────────────────
+
 function splitTopLevel(src: string): string[] | null {
   const out: string[] = [];
   const n = src.length;
@@ -106,23 +174,19 @@ function splitTopLevel(src: string): string[] | null {
       while (i < n && src[i] !== "\n") i++;
       continue;
     }
-    if (c === '"' || c === "'") {
-      i = skipQuoted(src, i);
-      if (i < 0) return null;
-      continue;
-    }
+    if (c === '"' || c === "'") { i = skipQuoted(src, i); if (i < 0) return null; continue; }
     if (c === "[") {
       const close = findLongClose(src, i);
       if (close !== -1) { i = close; continue; }
       i++; continue;
     }
     if (c === ";" && depth === 0) { pushStmt(i); i++; stmtStart = i; continue; }
-    if (c === ":" && src[i + 1] === ":") return null;   // label 5.2+
+    if (c === ":" && src[i + 1] === ":") return null;
     if (isIdentStart(c)) {
       let j = i + 1;
       while (j < n && isIdentPart(src[j])) j++;
       const w = src.slice(i, j);
-      if (w === "goto") return null;                     // goto 5.2+
+      if (w === "goto") return null;
       if (w === "function" || w === "do" || w === "repeat") depth++;
       else if (w === "then") { if (!pendingElseif) depth++; pendingElseif = false; }
       else if (w === "elseif") { pendingElseif = true; }
@@ -158,12 +222,7 @@ type Hoist = { decls: string; body: string; names: string[] } | null;
 function hoistLocal(stmt: string): Hoist {
   const m = /^local\s+/.exec(stmt);
   if (!m) return { decls: "", body: stmt, names: [] };
-
-  // `local function` is deliberately NOT hoisted. Hoisting changes what the
-  // body's free identifiers resolve to when a later top-level `local` is
-  // declared. That's a real semantic change, so we bail here.
   if (/^function\s+[A-Za-z_]/.test(stmt.slice(m[0].length))) return null;
-
   const rest = stmt.slice(m[0].length);
   const eq = findTopLevelEq(rest, 0);
   const names = (eq === -1 ? rest : rest.slice(0, eq)).trim();
@@ -186,9 +245,9 @@ function flatten(source: string): string {
     const h = hoistLocal(s);
     if (!h) return source;
     if (h.decls) {
-      for (const n of h.names) {
-        if (seen.has(n) || n.startsWith("__cff_")) return source;
-        seen.add(n);
+      for (const nm of h.names) {
+        if (seen.has(nm) || nm.startsWith("__cff_")) return source;
+        seen.add(nm);
       }
       decls.push(h.decls);
     }
@@ -213,9 +272,6 @@ function flatten(source: string): string {
   lines.push(`  local ${P}k=${mask}`);
   lines.push(`  local ${P}s=(${states[0]} + ${P}k) % ${P}M`);
   lines.push(`  while true do`);
-  // Opaque predicate: s + s%2 is always even. Combined with the shared-mask
-  // arithmetic, a decompiler sees a conditional loop guard that is not
-  // provably constant without reasoning across the mask arithmetic.
   lines.push(`    local ${P}g=(${P}s + ${P}s % 2) % 2`);
   lines.push(`    if ${P}g==0 then`);
   lines.push(`      local ${P}d=(${P}s-${P}k) % ${P}M`);
@@ -223,14 +279,28 @@ function flatten(source: string): string {
   bodies.forEach((body, idx) => {
     const next = idx + 1 < bodies.length ? states[idx + 1]! : doneId;
     const head = idx === 0 ? "if" : "elseif";
+    // A top-level `return X` body must live inside its own block — Lua 5.1
+    // requires `return` to be the last statement of a block, so emitting
+    // `return X` followed by `state=...` in the same block is a syntax error.
+    // Wrapping in `do ... end` makes the return the last statement of the
+    // inner block, and the state assignment after `end` is unreachable but
+    // valid.
+    const needsWrap = /^\s*return\b/.test(body);
     lines.push(`      ${head} ${P}d==${states[idx]} then`);
-    if (body) lines.push(body.split("\n").map(l => "        " + l).join("\n"));
+    if (body) {
+      if (needsWrap) {
+        lines.push(`        do`);
+        body.split("\n").forEach(l => lines.push("          " + l));
+        lines.push(`        end`);
+      } else {
+        body.split("\n").forEach(l => lines.push("        " + l));
+      }
+    }
     lines.push(`        ${P}s=(${next} + ${P}k) % ${P}M`);
   });
 
   lines.push(`      elseif ${P}d==${doneId} then`);
   lines.push(`        return`);
-  // Dead branch: never reachable, but a decompiler has to prove it.
   lines.push(`      elseif ${P}d==${deadId} then`);
   lines.push(`        error("${pick(ERR_MSGS)}",0)`);
   lines.push(`      else`);
@@ -244,7 +314,7 @@ function flatten(source: string): string {
   return lines.join("\n");
 }
 
-// ── 2. anti-tamper ────────────────────────────────────────────────────────
+// ── 3. anti-tamper (fails loud, never poisons) ────────────────────────────
 
 interface AntiTamperOpts {
   preamble?: boolean;
@@ -255,7 +325,6 @@ interface AntiTamperOpts {
 function buildAntiTamper(opts: AntiTamperOpts = {}): string {
   const { preamble = false, onFail = "error", callback = "onTamper" } = opts;
 
-  // Probes are in printable-ASCII range so string.char cannot truncate.
   const probes = Array.from({ length: 8 }, () => 32 + Math.floor(Math.random() * 95));
   const ks = 1 + Math.floor(Math.random() * 255);
   const expect = probes.map(v => (v * 7 + 13 + ks) % 256);
@@ -265,13 +334,11 @@ function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     : `error(__F[1],0)`;
 
   const body = [
-    // Snapshot identities we care about before any user code runs.
     `local __F={}`,
     `local __byte,__char=string.byte,string.char`,
     `local __orig={pcall=pcall,setmeta=setmetatable,sbyte=string.byte,`,
     `  loadstring=loadstring or load,rawget=rawget,rawset=rawset,`,
     `  tostring=tostring,newproxy=rawget(_G or {},"newproxy")}`,
-    // KAT on string.byte / string.char round-trip.
     `local __probes={${probes.join(",")}}`,
     `local __expect={${expect.join(",")}}`,
     `local __ks=${ks}`,
@@ -281,7 +348,6 @@ function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     `    __F[#__F+1]="${pick(ERR_MSGS)}" break`,
     `  end`,
     `end`,
-    // Identity checks — a wrapped function is a different value.
     `if __orig.pcall~=pcall then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
     `if __orig.setmeta~=setmetatable then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
     `if __orig.sbyte~=string.byte then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
@@ -289,7 +355,6 @@ function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     `if __orig.rawget~=rawget then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
     `if __orig.rawset~=rawset then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
     `if __orig.tostring~=tostring then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
-    // Semantics KATs.
     `do local ok,err=pcall(function() error("__probe") end)`,
     `   if ok or err~="__probe" then __F[#__F+1]="${pick(ERR_MSGS)}" end end`,
     `if tostring(nil)~="nil" then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
@@ -299,12 +364,10 @@ function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     `   end end`,
     `do local t={} local ok=pcall(setmetatable,t,{__index=function() return 7 end})`,
     `   if not ok or t.x~=7 then __F[#__F+1]="${pick(ERR_MSGS)}" end end`,
-    // newproxy is Lua 5.1 only. If present, it must still return userdata.
     `if __orig.newproxy then`,
     `  local ok,u=pcall(__orig.newproxy,true)`,
     `  if ok and type(u)~="userdata" then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
     `end`,
-    // debug.getinfo must still report C for C functions.
     `do local d=rawget(_G or {},"debug")`,
     `   if d and d.getinfo then`,
     `     local ok,info=pcall(d.getinfo,d.getinfo,"S")`,
@@ -318,7 +381,7 @@ function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     : [...body, `return {ok=true, failures=__F}`].join("\n");
 }
 
-// ── 3. mini-VM (16 opcodes) ────────────────────────────────────────────────
+// ── 4. mini-VM virtualizer ────────────────────────────────────────────────
 
 type MiniOp =
   | { op: "LOADK";     dst: number; kidx: number }
@@ -366,9 +429,7 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
   const key = Array.from({ length: 1 + rngRange(8) }, () => 1 + rngRange(255));
 
   const nameIdx = new Map<string, number>();
-  const pushConst = (v: Const) => {
-    const i = consts.length; consts.push(v); return i;
-  };
+  const pushConst = (v: Const) => { const i = consts.length; consts.push(v); return i; };
   for (const op of ops) {
     if ((op.op === "GETGLOBAL" || op.op === "SETGLOBAL") && !nameIdx.has(op.name)) {
       nameIdx.set(op.name, pushConst(op.name));
@@ -483,7 +544,7 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
   ].join("\n");
 }
 
-// ── 4. RC4 + decoy + env-test wrapper (logic unchanged) ──────────────────
+// ── 5. RC4 + decoy + env-test wrapper (logic preserved) ──────────────────
 
 function wrapOnce(source: string): string {
   const used = new Set<string>();
@@ -751,30 +812,40 @@ function wrapOnce(source: string): string {
   return out.join("\n");
 }
 
-// ── 5. combined entry ──────────────────────────────────────────────────────
+// ── 6. combined entry ─────────────────────────────────────────────────────
 
 export interface ObfuscateOpts {
   passes?: number;
   flatten?: boolean;
   antiTamper?: boolean;
+  minify?: boolean;
   mode?: "full" | "wrap" | "cff" | "none";
 }
 
 export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}): string {
   const o: ObfuscateOpts = typeof opts === "number" ? { passes: opts } : opts;
   const n = Math.max(1, Math.min(4, Math.floor(o.passes ?? 1)));
+  const minify = o.minify !== false;
 
   const mode = o.mode ?? "full";
-  const useAnti   = o.antiTamper ?? (mode === "full" || mode === "cff");
-  const useCff    = o.flatten    ?? (mode === "full" || mode === "cff");
-  const useWrap   = mode !== "cff" && mode !== "none";
+  if (mode === "none") return source;
+
+  const useAnti = o.antiTamper ?? (mode === "full" || mode === "cff");
+  const useCff  = o.flatten    ?? (mode === "full" || mode === "cff");
+  const useWrap = mode !== "cff";
 
   let cur = source;
   if (useAnti) cur = buildAntiTamper({ preamble: true }) + "\n" + cur;
   if (useCff)  cur = flatten(cur);
+  // Minify the payload *before* RC4 so the ciphertext (and therefore the
+  // final wrapper) is smaller. This also removes any newlines the user's
+  // source left behind, which makes the RC4'd stream look uniform.
+  if (minify && useWrap) cur = minifyLua(cur);
   if (useWrap) for (let i = 0; i < n; i++) cur = wrapOnce(cur);
+  // Minify the wrapper itself.
+  if (minify) cur = minifyLua(cur);
   return cur;
 }
 
 export type { MiniOp, Const };
-export { virtualize, buildAntiTamper, flatten };
+export { virtualize, buildAntiTamper, flatten, minifyLua };
