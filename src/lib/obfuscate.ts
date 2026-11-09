@@ -74,17 +74,6 @@ function skipQuoted(src: string, i: number): number {
 }
 
 // ── 1. minifier ───────────────────────────────────────────────────────────
-//
-// Strips comments, collapses whitespace, and removes spaces that are not
-// needed between adjacent tokens. Preserves string literals and long
-// brackets exactly. Idempotent.
-//
-// The only cases where a space IS required between two non-whitespace
-// characters:
-//   · word char followed by word char  (would merge into one token)
-//   · `-` followed by `-`              (would start a comment)
-//   · digit followed by `.`            (would merge into a malformed number)
-// Every other space is dropped.
 
 function minifyLua(src: string): string {
   const out: string[] = [];
@@ -279,12 +268,6 @@ function flatten(source: string): string {
   bodies.forEach((body, idx) => {
     const next = idx + 1 < bodies.length ? states[idx + 1]! : doneId;
     const head = idx === 0 ? "if" : "elseif";
-    // A top-level `return X` body must live inside its own block — Lua 5.1
-    // requires `return` to be the last statement of a block, so emitting
-    // `return X` followed by `state=...` in the same block is a syntax error.
-    // Wrapping in `do ... end` makes the return the last statement of the
-    // inner block, and the state assignment after `end` is unreachable but
-    // valid.
     const needsWrap = /^\s*return\b/.test(body);
     lines.push(`      ${head} ${P}d==${states[idx]} then`);
     if (body) {
@@ -314,71 +297,263 @@ function flatten(source: string): string {
   return lines.join("\n");
 }
 
-// ── 3. anti-tamper (fails loud, never poisons) ────────────────────────────
+// ── 3. silent-state anti-tamper ──────────────────────────────────────────
+//
+// Returns a Lua block. Contract:
+//   preamble: true  ->  `local <saltName> = (function() ... end)()`
+//                       Caller folds `<saltName>` into downstream decoder
+//                       keys (RC4 seed in wrapOnce, VM key derivation, etc.).
+//                       Clean run yields 0; tamper yields sum of primes.
+//   preamble: false ->  `return (function() ... end)()`   (integer state)
+//
+// Failure never throws. Every failed check adds a *fresh* pseudo-random prime
+// modulo 2^31 − 1, so successive builds differ and an attacker cannot simply
+// stamp `__ts = 0` on the two or three primes they reverse-engineered.
 
-interface AntiTamperOpts {
+const M_TS = 2147483647; // 2^31 − 1 (Mersenne prime)
+
+const isPrimeNum = (n: number): boolean => {
+  if (n < 2) return false;
+  if (n % 2 === 0) return n === 2;
+  for (let d = 3; d * d <= n; d += 2) if (n % d === 0) return false;
+  return true;
+};
+
+/** Encode a string as a Lua 5.1-safe byte-array literal (no escaping). */
+const luaBytes = (s: string): string => {
+  const bytes = Array.from(new TextEncoder().encode(s));
+  return `string.char(${bytes.join(",")})`;
+};
+
+export interface AntiTamperOpts {
   preamble?: boolean;
+  saltName?: string;
+  /** @deprecated — failures no longer raise. Kept for API compatibility. */
   onFail?: "error" | "callback";
+  /** @deprecated — failures no longer raise. Kept for API compatibility. */
   callback?: string;
 }
 
-function buildAntiTamper(opts: AntiTamperOpts = {}): string {
-  const { preamble = false, onFail = "error", callback = "onTamper" } = opts;
+export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
+  const preamble = opts.preamble ?? false;
+  const saltName = opts.saltName ?? "__tamperState";
 
-  const probes = Array.from({ length: 8 }, () => 32 + Math.floor(Math.random() * 95));
-  const ks = 1 + Math.floor(Math.random() * 255);
-  const expect = probes.map(v => (v * 7 + 13 + ks) % 256);
+  const usedP = new Set<number>();
+  const nextP = (): number => {
+    for (;;) {
+      const n = 15000 + Math.floor(Math.random() * 85000);
+      if (isPrimeNum(n) && !usedP.has(n)) { usedP.add(n); return n; }
+    }
+  };
 
-  const fail = onFail === "callback"
-    ? `${callback}({ok=false, failures=__F}) error(__F[1],0)`
-    : `error(__F[1],0)`;
+  const P = {
+    sbyte: nextP(), schar: nextP(), smt: nextP(), pcall: nextP(),
+    type: nextP(), rawget: nextP(), err: nextP(),
+    info: nextP(), getinfo: nextP(),
+    getgenv: nextP(), getrenv: nextP(), checkcaller: nextP(),
+    hookfn: nextP(), hookmm: nextP(), islcl: nextP(), isexecc: nextP(),
+    ccFalse: nextP(), islclC: nextP(), islclL: nextP(), ieccTrue: nextP(),
+    gmm: nextP(), namecall: nextP(), index: nextP(),
+    lsSpoof: nextP(), lsOk: nextP(), lsVal: nextP(),
+    errProbe: nextP(),
+    tsNil: nextP(), tsOne: nextP(),
+    sbyteV: nextP(), scharV: nextP(),
+    smtV: nextP(), rawgetV: nextP(),
+  };
 
-  const body = [
-    `local __F={}`,
-    `local __byte,__char=string.byte,string.char`,
-    `local __orig={pcall=pcall,setmeta=setmetatable,sbyte=string.byte,`,
-    `  loadstring=loadstring or load,rawget=rawget,rawset=rawset,`,
-    `  tostring=tostring,newproxy=rawget(_G or {},"newproxy")}`,
-    `local __probes={${probes.join(",")}}`,
-    `local __expect={${expect.join(",")}}`,
-    `local __ks=${ks}`,
-    `for i=1,#__probes do`,
-    `  local v=__byte(__char(__probes[i]),1)`,
-    `  if ((v*7+13+__ks)%256)~=__expect[i] then`,
-    `    __F[#__F+1]="${pick(ERR_MSGS)}" break`,
-    `  end`,
-    `end`,
-    `if __orig.pcall~=pcall then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
-    `if __orig.setmeta~=setmetatable then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
-    `if __orig.sbyte~=string.byte then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
-    `if __orig.loadstring~=(loadstring or load) then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
-    `if __orig.rawget~=rawget then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
-    `if __orig.rawset~=rawset then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
-    `if __orig.tostring~=tostring then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
-    `do local ok,err=pcall(function() error("__probe") end)`,
-    `   if ok or err~="__probe" then __F[#__F+1]="${pick(ERR_MSGS)}" end end`,
-    `if tostring(nil)~="nil" then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
-    `do local ok,f=pcall(loadstring,"return 1+1")`,
-    `   if not ok or type(f)~="function" or f()~=2 then`,
-    `     __F[#__F+1]="${pick(ERR_MSGS)}"`,
-    `   end end`,
-    `do local t={} local ok=pcall(setmetatable,t,{__index=function() return 7 end})`,
-    `   if not ok or t.x~=7 then __F[#__F+1]="${pick(ERR_MSGS)}" end end`,
-    `if __orig.newproxy then`,
-    `  local ok,u=pcall(__orig.newproxy,true)`,
-    `  if ok and type(u)~="userdata" then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
-    `end`,
-    `do local d=rawget(_G or {},"debug")`,
-    `   if d and d.getinfo then`,
-    `     local ok,info=pcall(d.getinfo,d.getinfo,"S")`,
-    `     if ok and info and info.what~="C" then __F[#__F+1]="${pick(ERR_MSGS)}" end`,
-    `   end end`,
-    `if #__F>0 then ${fail} end`,
-  ];
+  // Unique per emission so a naive error hook cannot filter this value.
+  const probeStr = "__probe_" + Math.random().toString(36).slice(2, 10);
 
-  return preamble
-    ? ["do", ...body.map(l => "  " + l), "end"].join("\n")
-    : [...body, `return {ok=true, failures=__F}`].join("\n");
+  const S = {
+    debug: "debug", info: "info", getinfo: "getinfo",
+    what: "what", s: "s", S: "S", Lua: "Lua",
+    getgenv: "getgenv", getrenv: "getrenv", checkcaller: "checkcaller",
+    hookfunction: "hookfunction", hookmetamethod: "hookmetamethod",
+    islclosure: "islclosure", isexecutorclosure: "isexecutorclosure",
+    getrawmetatable: "getrawmetatable",
+    namecall: "__namecall", index: "__index",
+    load: "load", loadstring: "loadstring", game: "game",
+    getfenv: "getfenv", probe: probeStr, ret42: "return 42",
+    nilStr: "nil", oneStr: "1",
+  } as const;
+
+  type SKey = keyof typeof S;
+  const sKeys = Object.keys(S) as SKey[];
+  const sIdx = {} as Record<SKey, number>;
+  sKeys.forEach((k, i) => { sIdx[k] = i + 1; });
+  const s = (k: SKey) => `__S[${sIdx[k]}]`;
+
+  const strTable = sKeys.map((k) => `  ${luaBytes(S[k])}`).join(",\n");
+
+  const body = `
+local __ts = 0
+local __M = ${M_TS}
+local __G = _G or {}
+local __rawget = rawget or function(t, k) return t[k] end
+local __type = type
+local __pcall = pcall
+local __setmt = setmetatable
+local __sbyte = string.byte
+local __schar = string.char
+local __tostring = tostring
+local __err = error
+local __S = {
+${strTable}
+}
+local __env = __G
+do
+  local __gfe = __rawget(__G, ${s("getfenv")})
+  if __type(__gfe) == "function" then
+    local __ok, __e = __pcall(__gfe, 0)
+    if __ok and __type(__e) == "table" then __env = __e end
+  end
+end
+local function __isLua(__f)
+  if __type(__f) ~= "function" then return false end
+  local __d = __rawget(__env, ${s("debug")})
+  if __type(__d) ~= "table" then __d = __rawget(__G, ${s("debug")}) end
+  if __type(__d) ~= "table" then return false end
+  local __di = __rawget(__d, ${s("info")})
+  if __type(__di) == "function" then
+    local __ok, __r = __pcall(__di, __f, ${s("s")})
+    if __ok and __type(__r) == "string" then return __r == ${s("Lua")} end
+  end
+  local __dgi = __rawget(__d, ${s("getinfo")})
+  if __type(__dgi) == "function" then
+    local __ok, __r = __pcall(__dgi, __f, ${s("S")})
+    if __ok and __type(__r) == "table" then
+      return __rawget(__r, ${s("what")}) == ${s("Lua")}
+    end
+  end
+  return false
+end
+if __isLua(__sbyte)  then __ts = (__ts + ${P.sbyte})  % __M end
+if __isLua(__schar)  then __ts = (__ts + ${P.schar})  % __M end
+if __isLua(__setmt)  then __ts = (__ts + ${P.smt})    % __M end
+if __isLua(__pcall)  then __ts = (__ts + ${P.pcall})  % __M end
+if __isLua(__type)   then __ts = (__ts + ${P.type})   % __M end
+if __isLua(__rawget) then __ts = (__ts + ${P.rawget}) % __M end
+if __isLua(__err)    then __ts = (__ts + ${P.err})    % __M end
+do
+  local __d = __rawget(__env, ${s("debug")}) or __rawget(__G, ${s("debug")})
+  if __type(__d) == "table" then
+    local __di = __rawget(__d, ${s("info")})
+    if __type(__di) == "function" then
+      local __ok, __r = __pcall(__di, __di, ${s("s")})
+      if __ok and __r == ${s("Lua")} then __ts = (__ts + ${P.info}) % __M end
+    end
+    local __dgi = __rawget(__d, ${s("getinfo")})
+    if __type(__dgi) == "function" then
+      local __ok, __r = __pcall(__dgi, __dgi, ${s("S")})
+      if __ok and __type(__r) == "table"
+         and __rawget(__r, ${s("what")}) == ${s("Lua")} then
+        __ts = (__ts + ${P.getinfo}) % __M
+      end
+    end
+  end
+end
+if __rawget(__env, ${s("getgenv")})          ~= nil
+   or __rawget(__G, ${s("getgenv")})          ~= nil then __ts = (__ts + ${P.getgenv})     % __M end
+if __rawget(__env, ${s("getrenv")})          ~= nil
+   or __rawget(__G, ${s("getrenv")})          ~= nil then __ts = (__ts + ${P.getrenv})     % __M end
+if __rawget(__env, ${s("checkcaller")})      ~= nil
+   or __rawget(__G, ${s("checkcaller")})      ~= nil then __ts = (__ts + ${P.checkcaller}) % __M end
+if __rawget(__env, ${s("hookfunction")})     ~= nil
+   or __rawget(__G, ${s("hookfunction")})     ~= nil then __ts = (__ts + ${P.hookfn})      % __M end
+if __rawget(__env, ${s("hookmetamethod")})   ~= nil
+   or __rawget(__G, ${s("hookmetamethod")})   ~= nil then __ts = (__ts + ${P.hookmm})      % __M end
+if __rawget(__env, ${s("islclosure")})       ~= nil
+   or __rawget(__G, ${s("islclosure")})       ~= nil then __ts = (__ts + ${P.islcl})       % __M end
+if __rawget(__env, ${s("isexecutorclosure")}) ~= nil
+   or __rawget(__G, ${s("isexecutorclosure")}) ~= nil then __ts = (__ts + ${P.isexecc})    % __M end
+do
+  local __cc = __rawget(__env, ${s("checkcaller")}) or __rawget(__G, ${s("checkcaller")})
+  if __type(__cc) == "function" then
+    local __ok, __r = __pcall(__cc)
+    if __ok and __r == false then __ts = (__ts + ${P.ccFalse}) % __M end
+  end
+end
+do
+  local __il = __rawget(__env, ${s("islclosure")}) or __rawget(__G, ${s("islclosure")})
+  if __type(__il) == "function" then
+    local __ok1, __r1 = __pcall(__il, __sbyte)
+    if __ok1 and __r1 == true then __ts = (__ts + ${P.islclC}) % __M end
+    local __ok2, __r2 = __pcall(__il, function() end)
+    if __ok2 and __r2 == false then __ts = (__ts + ${P.islclL}) % __M end
+  end
+end
+do
+  local __iec = __rawget(__env, ${s("isexecutorclosure")}) or __rawget(__G, ${s("isexecutorclosure")})
+  if __type(__iec) == "function" then
+    local __ok, __r = __pcall(__iec, function() end)
+    if __ok and __r == true then __ts = (__ts + ${P.ieccTrue}) % __M end
+  end
+end
+do
+  local __gmm = __rawget(__env, ${s("getrawmetatable")}) or __rawget(__G, ${s("getrawmetatable")})
+  if __type(__gmm) == "function" then
+    __ts = (__ts + ${P.gmm}) % __M
+    local __g = __rawget(__env, ${s("game")}) or __rawget(__G, ${s("game")})
+    if __g ~= nil then
+      local __ok, __mt = __pcall(__gmm, __g)
+      if __ok and __type(__mt) == "table" then
+        local __nc = __rawget(__mt, ${s("namecall")})
+        if __type(__nc) == "function" and __isLua(__nc) then
+          __ts = (__ts + ${P.namecall}) % __M
+        end
+        local __ix = __rawget(__mt, ${s("index")})
+        if __type(__ix) == "function" and __isLua(__ix) then
+          __ts = (__ts + ${P.index}) % __M
+        end
+      end
+    end
+  end
+end
+do
+  local __ls = __rawget(__env, ${s("loadstring")}) or __rawget(__G, ${s("loadstring")})
+  if __type(__ls) ~= "function" then
+    __ls = __rawget(__env, ${s("load")}) or __rawget(__G, ${s("load")})
+  end
+  if __type(__ls) == "function" then
+    if __isLua(__ls) then __ts = (__ts + ${P.lsSpoof}) % __M end
+    local __ok, __f = __pcall(__ls, ${s("ret42")})
+    if not __ok or __type(__f) ~= "function" then
+      __ts = (__ts + ${P.lsOk}) % __M
+    else
+      local __ok2, __v = __pcall(__f)
+      if not __ok2 or __v ~= 42 then __ts = (__ts + ${P.lsVal}) % __M end
+    end
+  end
+end
+do
+  local __ok, __e = __pcall(function() __err(${s("probe")}, 0) end)
+  if __ok or __e ~= ${s("probe")} then
+    __ts = (__ts + ${P.errProbe}) % __M
+  end
+end
+if __tostring(nil) ~= ${s("nilStr")} then __ts = (__ts + ${P.tsNil}) % __M end
+if __tostring(1)   ~= ${s("oneStr")} then __ts = (__ts + ${P.tsOne}) % __M end
+if __sbyte(__schar(65), 1)  ~= 65  then __ts = (__ts + ${P.sbyteV}) % __M end
+if __sbyte(__schar(200), 1) ~= 200 then __ts = (__ts + ${P.scharV}) % __M end
+do
+  local __t = {}
+  local __ok = __pcall(__setmt, __t, {__index = function() return 7 end})
+  if not __ok or __t.x ~= 7 then __ts = (__ts + ${P.smtV}) % __M end
+end
+do
+  local __t = {}
+  __t.x = 1
+  if __rawget(__t, "x") ~= 1 then __ts = (__ts + ${P.rawgetV}) % __M end
+end
+return __ts
+`.trim();
+
+  const indented = body.split("\n").map((l) => "  " + l).join("\n");
+
+  if (preamble) {
+    return `local ${saltName} = (function()\n${indented}\nend)()`;
+  }
+  return `return (function()\n${indented}\nend)()`;
 }
 
 // ── 4. mini-VM virtualizer ────────────────────────────────────────────────
@@ -544,9 +719,23 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
   ].join("\n");
 }
 
-// ── 5. RC4 + decoy + env-test wrapper (logic preserved) ──────────────────
+// ── 5. RC4 + silent fail wrapper (salt-aware) ────────────────────────────
+//
+// `saltRef` is a Lua identifier from the anti-tamper preamble. When non-null:
+//   * An early-bail state runs before any string decoding — if the salt is
+//     nonzero (i.e. any tamper check failed), we return an empty function
+//     rather than crash on a probe line.
+//   * The RC4 key is offset by `saltRef`, so even if an attacker deletes the
+//     early bail, decryption of the payload produces garbage; `loadstring`
+//     returns nil, we hit the silent fail branch, and the script silently
+//     does nothing instead of erroring loudly.
+//   * The fail branch no longer calls `error` — it returns an empty function.
+//
+// Inner wrapper passes (i < n-1) get `saltRef = null` because their code is
+// executed via `loadstring`, which does NOT inherit upvalues; referencing
+// `saltRef` there would resolve to a `nil` global and break arithmetic.
 
-function wrapOnce(source: string): string {
+function wrapOnce(source: string, saltRef: string | null = null): string {
   const used = new Set<string>();
   const name = (): string => {
     for (;;) {
@@ -680,6 +869,11 @@ function wrapOnce(source: string): string {
     return (kb + (Math.floor(m / 256) % 256)) % 256;
   });
 
+  // `saltAdd` is the runtime-salt term on the RC4 key. With no salt it is
+  // empty; with a salt it is `+__tamper_xxx`. Applied only when wrapOnce
+  // receives a saltRef from the outermost layer.
+  const saltAdd = saltRef ? `+${saltRef}` : "";
+
   const branches: string[] = [
     [`if ${is(ST.names)} then`, junk(), ...names.map((n) => `  ${n}`),
       `  ${nSTR}=${nG}[${nS1}]`, `  ${nSB}=${nSTR}[${nS2}]`, `  ${nSC}=${nSTR}[${nS3}]`,
@@ -725,7 +919,8 @@ function wrapOnce(source: string): string {
       `  ${go(ST.dec)}`, `end`].join("\n"),
     [`if ${is(ST.dec)} then`, junk(),
       `  local _a,_b=0,0`,
-      `  local _ls=(${nKB}[1]*16777216+${nKB}[2]*65536+${nKB}[3]*256+${nKB}[4])%${M}`,
+      // ── salt-aware RC4 seed ──────────────────────────────────────────
+      `  local _ls=(${nKB}[1]*16777216+${nKB}[2]*65536+${nKB}[3]*256+${nKB}[4]${saltAdd})%${M}`,
       `  local _o={} local _hp=0 local _hq=1`,
       `  for _i=1,#${nData} do`,
       `    _a=(_a+1)%256 _b=(_b+${nBox}[_a])%256`,
@@ -745,7 +940,8 @@ function wrapOnce(source: string): string {
       `  if not ${nF} then ${go(ST.fail)} else ${go(ST.run)} end`,
       `end`].join("\n"),
     [`if ${is(ST.run)} then`, junk(), `  ${go(ST.done)}`, `end`].join("\n"),
-    [`if ${is(ST.fail)} then`, `  ${nER}(${nMSG},0)`, `end`].join("\n"),
+    // Silent fail — return an empty function instead of erroring on a probe line.
+    [`if ${is(ST.fail)} then`, `  return function() end`, `end`].join("\n"),
     ...Array.from({ length: 6 }, () => {
       const d = sid();
       return [`if ${is(d)} then`, junk(),
@@ -802,14 +998,21 @@ function wrapOnce(source: string): string {
     ].join(",")}`,
   ].join("\n");
 
+  // Early-bail is placed AFTER `head` (string tables and decoders) but BEFORE
+  // any state dispatches. This avoids the loud-crash path where a garbled
+  // `"string"` key would index `nil` and call `nil[nS2]`.
+  const earlyBail = saltRef ? `if ${saltRef} ~= 0 then return function() end end` : "";
+
   const out = [
-    junks(3), head, `${go(ST.names)}`, `while true do`,
+    junks(3), head,
+    earlyBail,
+    `${go(ST.names)}`, `while true do`,
     ...shuffle(branches),
     `  if ${is(ST.done)} then break end`,
     `end`,
     `return ${nF}(...)`,
   ];
-  return out.join("\n");
+  return out.filter(Boolean).join("\n");
 }
 
 // ── 6. combined entry ─────────────────────────────────────────────────────
@@ -834,18 +1037,41 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   const useCff  = o.flatten    ?? (mode === "full" || mode === "cff");
   const useWrap = mode !== "cff";
 
+  // The salt name is defined once at the top of the chunk and consumed by the
+  // outermost wrapper only. Inner wrappers run inside the outermost decrypt
+  // path, so if the salt is nonzero the outer early-bail fires before they
+  // execute. Inner wrappers must NOT reference saltRef — their code is
+  // loadstring'd, which does not inherit upvalues.
+  const saltName = useAnti
+    ? "__tamper_" + Math.random().toString(36).slice(2, 10).padEnd(8, "0")
+    : null;
+
   let cur = source;
-  if (useAnti) cur = buildAntiTamper({ preamble: true }) + "\n" + cur;
-  if (useCff)  cur = flatten(cur);
-  // Minify the payload *before* RC4 so the ciphertext (and therefore the
-  // final wrapper) is smaller. This also removes any newlines the user's
-  // source left behind, which makes the RC4'd stream look uniform.
+
+  // Flatten the *payload* first, not the anti-tamper preamble — the salt local
+  // must live at the chunk's top level so the outermost wrapper can close over
+  // it as an upvalue.
+  if (useCff) cur = flatten(cur);
+  // Minify the payload before RC4 so the ciphertext (and final output) is
+  // smaller and any residual newlines are erased.
   if (minify && useWrap) cur = minifyLua(cur);
-  if (useWrap) for (let i = 0; i < n; i++) cur = wrapOnce(cur);
-  // Minify the wrapper itself.
+
+  if (useWrap) {
+    for (let i = 0; i < n; i++) {
+      const isOutermost = i === n - 1;
+      cur = wrapOnce(cur, isOutermost ? saltName : null);
+    }
+  }
+
+  // Prepend the anti-tamper preamble AFTER wrapping, so the salt local is in
+  // scope for the outermost wrapper's early-bail and RC4 seed.
+  if (useAnti && saltName) {
+    cur = buildAntiTamper({ preamble: true, saltName }) + "\n" + cur;
+  }
+
   if (minify) cur = minifyLua(cur);
   return cur;
 }
 
 export type { MiniOp, Const };
-export { virtualize, buildAntiTamper, flatten, minifyLua };
+export { virtualize, flatten, minifyLua };
