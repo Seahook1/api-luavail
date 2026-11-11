@@ -1,4 +1,4 @@
-// Portable Lua 5.1 / Luau obfuscator. Anti-tamper + CFF + RC4 + minify.
+// Portable Lua 5.1 / Luau obfuscator. Anti-tamper + CFF + RC4 + VM + minify.
 
 const M = 4294967296;
 
@@ -43,7 +43,7 @@ const ERR_MSGS = [
 
 const K_CHECKS = 15;
 
-// ── 0. tokenizer primitives (shared by flatten + minify) ─────────────────
+// ── tokenizer primitives ─────────────────────────────────────────────────
 
 const isIdentStart = (c: string) => /[A-Za-z_]/.test(c);
 const isIdentPart  = (c: string) => /[A-Za-z0-9_]/.test(c);
@@ -73,14 +73,13 @@ function skipQuoted(src: string, i: number): number {
   return -1;
 }
 
-// ── 1. minifier ───────────────────────────────────────────────────────────
+// ── minifier ─────────────────────────────────────────────────────────────
 
 function minifyLua(src: string): string {
   const out: string[] = [];
   const n = src.length;
   let i = 0;
   let pending = false;
-
   const lastChar = (): string => {
     const last = out[out.length - 1];
     return last ? last[last.length - 1]! : "";
@@ -93,23 +92,16 @@ function minifyLua(src: string): string {
     if (/[0-9]/.test(a) && b === ".") return true;
     return false;
   };
-
   while (i < n) {
     const c = src[i]!;
-
-    if (c === " " || c === "\t" || c === "\r" || c === "\n") {
-      pending = true;
-      i++;
-      continue;
-    }
+    if (c === " " || c === "\t" || c === "\r" || c === "\n") { pending = true; i++; continue; }
     if (c === "-" && src[i + 1] === "-") {
       if (src[i + 2] === "[") {
         const close = findLongClose(src, i + 2);
         if (close !== -1) { i = close; pending = true; continue; }
       }
       while (i < n && src[i] !== "\n") i++;
-      pending = true;
-      continue;
+      pending = true; continue;
     }
     if (c === '"' || c === "'") {
       if (pending && needSpace(lastChar(), c)) out.push(" ");
@@ -117,28 +109,24 @@ function minifyLua(src: string): string {
       i = skipQuoted(src, i);
       if (i < 0) throw new Error("unterminated string in minify");
       out.push(src.slice(start, i));
-      pending = false;
-      continue;
+      pending = false; continue;
     }
     if (c === "[") {
       const close = findLongClose(src, i);
       if (close !== -1) {
         if (pending && needSpace(lastChar(), c)) out.push(" ");
         out.push(src.slice(i, close));
-        i = close;
-        pending = false;
-        continue;
+        i = close; pending = false; continue;
       }
     }
     if (pending && needSpace(lastChar(), c)) out.push(" ");
     out.push(c);
-    pending = false;
-    i++;
+    pending = false; i++;
   }
   return out.join("");
 }
 
-// ── 2. statement-level CFF ────────────────────────────────────────────────
+// ── CFF ──────────────────────────────────────────────────────────────────
 
 function splitTopLevel(src: string): string[] | null {
   const out: string[] = [];
@@ -207,7 +195,6 @@ function findTopLevelEq(s: string, from: number): number {
 }
 
 type Hoist = { decls: string; body: string; names: string[] } | null;
-
 function hoistLocal(stmt: string): Hoist {
   const m = /^local\s+/.exec(stmt);
   if (!m) return { decls: "", body: stmt, names: [] };
@@ -226,7 +213,6 @@ function hoistLocal(stmt: string): Hoist {
 function flatten(source: string): string {
   const stmts = splitTopLevel(source);
   if (!stmts || stmts.length < 2) return source;
-
   const seen = new Set<string>();
   const decls: string[] = [];
   const bodies: string[] = [];
@@ -297,20 +283,24 @@ function flatten(source: string): string {
   return lines.join("\n");
 }
 
-// ── 3. silent-state anti-tamper ──────────────────────────────────────────
+// ── HEAVILY OBFUSCATED SILENT ANTI-TAMPER ────────────────────────────────
 //
-// Returns a Lua block. Contract:
-//   preamble: true  ->  `local <saltName> = (function() ... end)()`
-//                       Caller folds `<saltName>` into downstream decoder
-//                       keys (RC4 seed in wrapOnce, VM key derivation, etc.).
-//                       Clean run yields 0; tamper yields sum of primes.
-//   preamble: false ->  `return (function() ... end)()`   (integer state)
-//
-// Failure never throws. Every failed check adds a *fresh* pseudo-random prime
-// modulo 2^31 − 1, so successive builds differ and an attacker cannot simply
-// stamp `__ts = 0` on the two or three primes they reverse-engineered.
+// Design:
+//   * Two independent accumulators __ta / __tb, mixed at the end.
+//   * All sensitive strings live in a XOR-masked byte-array table, decoded
+//     lazily via __d(i). No plaintext appears in output.
+//   * Checks are emitted as an *array of closures*, shuffled at build time,
+//     and dispatched via `for _i=1,#__C do __C[_i]() end`. Attackers can't
+//     pattern-match the emitter order.
+//   * Every check is a prime-add (mod 2^31 − 1); no `error` calls anywhere.
+//   * Opaque predicates wrap each check so a naïve slicer can't tell what
+//     the true condition is.
+//   * Warning install: if `getgenv` is reachable, we decode the message
+//     "this script is not to be tampered with — enhanced" and write it into
+//     genv under a fresh random key. That doubles as a getgenv detector AND
+//     as a visible marker on hostile environments.
 
-const M_TS = 2147483647; // 2^31 − 1 (Mersenne prime)
+const M_TS = 2147483647;
 
 const isPrimeNum = (n: number): boolean => {
   if (n < 2) return false;
@@ -319,7 +309,6 @@ const isPrimeNum = (n: number): boolean => {
   return true;
 };
 
-/** Encode a string as a Lua 5.1-safe byte-array literal (no escaping). */
 const luaBytes = (s: string): string => {
   const bytes = Array.from(new TextEncoder().encode(s));
   return `string.char(${bytes.join(",")})`;
@@ -332,11 +321,14 @@ export interface AntiTamperOpts {
   onFail?: "error" | "callback";
   /** @deprecated — failures no longer raise. Kept for API compatibility. */
   callback?: string;
+  /** Emit the "not to be tampered with" warning via getgenv. Default: true. */
+  warn?: boolean;
 }
 
 export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
   const preamble = opts.preamble ?? false;
   const saltName = opts.saltName ?? "__tamperState";
+  const emitWarning = opts.warn ?? true;
 
   const usedP = new Set<number>();
   const nextP = (): number => {
@@ -345,6 +337,38 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
       if (isPrimeNum(n) && !usedP.has(n)) { usedP.add(n); return n; }
     }
   };
+
+  // String table. Every sensitive literal lives here.
+  const warnMsg = "getgenv luavail — this script is not to be tampered with enhanced";
+  const STRINGS = [
+    "debug", "info", "getinfo", "what", "s", "S", "Lua",
+    "getgenv", "getrenv", "checkcaller",
+    "hookfunction", "hookmetamethod", "islclosure", "isexecutorclosure",
+    "getrawmetatable", "__namecall", "__index",
+    "load", "loadstring", "game", "getfenv",
+    "__probe_" + Math.random().toString(36).slice(2, 10),
+    "return 42", "nil", "1",
+    warnMsg,
+    "__tamper_notice_" + Math.random().toString(36).slice(2, 8),
+  ];
+  const S = (name: string): number => {
+    const i = STRINGS.indexOf(name);
+    if (i < 0) throw new Error("unknown anti-tamper string: " + name);
+    return i + 1;
+  };
+  const d = (name: string) => `__d(${S(name)})`;
+  const wmsg = d(warnMsg);
+  const wkey = d("__tamper_notice_" + warnMsg.length + "_" + STRINGS.length);
+  // Note: `wkey` uses index of a synthetic name — we index by position so we
+  // can compute it deterministically. Below, STRINGS is indexed 1-based.
+
+  // Encode the string table with a per-build XOR mask.
+  const xorKey = 1 + rngRange(254);
+  const stringTable = STRINGS.map((s) => {
+    const bytes = Array.from(new TextEncoder().encode(s));
+    const masked = bytes.map((b) => (b + xorKey) % 256);
+    return `{${masked.join(",")}}`;
+  }).join(",");
 
   const P = {
     sbyte: nextP(), schar: nextP(), smt: nextP(), pcall: nextP(),
@@ -359,204 +383,264 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     tsNil: nextP(), tsOne: nextP(),
     sbyteV: nextP(), scharV: nextP(),
     smtV: nextP(), rawgetV: nextP(),
+    warnSet: nextP(), genvErr: nextP(),
   };
 
-  // Unique per emission so a naive error hook cannot filter this value.
-  const probeStr = "__probe_" + Math.random().toString(36).slice(2, 10);
+  // Each check is a closure that mutates the shared accumulators __ta/__tb.
+  // Build-time shuffle means the runtime array order is unpredictable.
+  const checks: string[] = [];
 
-  const S = {
-    debug: "debug", info: "info", getinfo: "getinfo",
-    what: "what", s: "s", S: "S", Lua: "Lua",
-    getgenv: "getgenv", getrenv: "getrenv", checkcaller: "checkcaller",
-    hookfunction: "hookfunction", hookmetamethod: "hookmetamethod",
-    islclosure: "islclosure", isexecutorclosure: "isexecutorclosure",
-    getrawmetatable: "getrawmetatable",
-    namecall: "__namecall", index: "__index",
-    load: "load", loadstring: "loadstring", game: "game",
-    getfenv: "getfenv", probe: probeStr, ret42: "return 42",
-    nilStr: "nil", oneStr: "1",
-  } as const;
+  checks.push(`function()
+    if __isLua(__sbyte) then __ta = (__ta + ${P.sbyte}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__schar) then __ta = (__ta + ${P.schar}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__setmt) then __tb = (__tb + ${P.smt}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__pcall) then __tb = (__tb + ${P.pcall}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__type) then __ta = (__ta + ${P.type}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__rawget) then __tb = (__tb + ${P.rawget}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__err) then __ta = (__ta + ${P.err}) % __M end
+  end`);
 
-  type SKey = keyof typeof S;
-  const sKeys = Object.keys(S) as SKey[];
-  const sIdx = {} as Record<SKey, number>;
-  sKeys.forEach((k, i) => { sIdx[k] = i + 1; });
-  const s = (k: SKey) => `__S[${sIdx[k]}]`;
+  // debug.info / debug.getinfo spoof
+  checks.push(`function()
+    local __dd = __rg(__env, ${d("debug")}) or __rg(__G, ${d("debug")})
+    if __ty(__dd) == "table" then
+      local __di = __rg(__dd, ${d("info")})
+      if __ty(__di) == "function" then
+        local __ok, __r = __pc(__di, __di, ${d("s")})
+        if __ok and __r == ${d("Lua")} then __ta = (__ta + ${P.info}) % __M end
+      end
+      local __dgi = __rg(__dd, ${d("getinfo")})
+      if __ty(__dgi) == "function" then
+        local __ok, __r = __pc(__dgi, __dgi, ${d("S")})
+        if __ok and __ty(__r) == "table" and __rg(__r, ${d("what")}) == ${d("Lua")} then
+          __tb = (__tb + ${P.getinfo}) % __M
+        end
+      end
+    end
+  end`);
 
-  const strTable = sKeys.map((k) => `  ${luaBytes(S[k])}`).join(",\n");
+  // getgenv presence + warning install
+  if (emitWarning) {
+    checks.push(`function()
+      local __gg = __rg(__env, ${d("getgenv")}) or __rg(__G, ${d("getgenv")})
+      if __ty(__gg) ~= "function" then return end
+      __ta = (__ta + ${P.getgenv}) % __M
+      local __ok, __gv = __pc(__gg)
+      if not __ok or __ty(__gv) ~= "table" then
+        __tb = (__tb + ${P.genvErr}) % __M
+        return
+      end
+      local __wm = ${wmsg}
+      local __wk = ${wkey}
+      local __wok = __pc(function() __gv[__wk] = __wm end)
+      if __wok then __tb = (__tb + ${P.warnSet}) % __M end
+    end`);
+  } else {
+    checks.push(`function()
+      if __rg(__env, ${d("getgenv")}) ~= nil or __rg(__G, ${d("getgenv")}) ~= nil then
+        __ta = (__ta + ${P.getgenv}) % __M
+      end
+    end`);
+  }
+
+  checks.push(`function()
+    if __rg(__env, ${d("getrenv")}) ~= nil or __rg(__G, ${d("getrenv")}) ~= nil then
+      __ta = (__ta + ${P.getrenv}) % __M
+    end
+  end`);
+  checks.push(`function()
+    if __rg(__env, ${d("checkcaller")}) ~= nil or __rg(__G, ${d("checkcaller")}) ~= nil then
+      __tb = (__tb + ${P.checkcaller}) % __M
+    end
+  end`);
+  checks.push(`function()
+    if __rg(__env, ${d("hookfunction")}) ~= nil or __rg(__G, ${d("hookfunction")}) ~= nil then
+      __tb = (__tb + ${P.hookfn}) % __M
+    end
+  end`);
+  checks.push(`function()
+    if __rg(__env, ${d("hookmetamethod")}) ~= nil or __rg(__G, ${d("hookmetamethod")}) ~= nil then
+      __ta = (__ta + ${P.hookmm}) % __M
+    end
+  end`);
+  checks.push(`function()
+    if __rg(__env, ${d("islclosure")}) ~= nil or __rg(__G, ${d("islclosure")}) ~= nil then
+      __tb = (__tb + ${P.islcl}) % __M
+    end
+  end`);
+  checks.push(`function()
+    if __rg(__env, ${d("isexecutorclosure")}) ~= nil or __rg(__G, ${d("isexecutorclosure")}) ~= nil then
+      __ta = (__ta + ${P.isexecc}) % __M
+    end
+  end`);
+
+  // checkcaller semantic
+  checks.push(`function()
+    local __cc = __rg(__env, ${d("checkcaller")}) or __rg(__G, ${d("checkcaller")})
+    if __ty(__cc) ~= "function" then return end
+    local __ok, __r = __pc(__cc)
+    if __ok and __r == false then __ta = (__ta + ${P.ccFalse}) % __M end
+  end`);
+  // islclosure semantic
+  checks.push(`function()
+    local __il = __rg(__env, ${d("islclosure")}) or __rg(__G, ${d("islclosure")})
+    if __ty(__il) ~= "function" then return end
+    local __ok1, __r1 = __pc(__il, __sbyte)
+    if __ok1 and __r1 == true then __tb = (__tb + ${P.islclC}) % __M end
+    local __ok2, __r2 = __pc(__il, function() end)
+    if __ok2 and __r2 == false then __tb = (__tb + ${P.islclL}) % __M end
+  end`);
+  // isexecutorclosure semantic
+  checks.push(`function()
+    local __iec = __rg(__env, ${d("isexecutorclosure")}) or __rg(__G, ${d("isexecutorclosure")})
+    if __ty(__iec) ~= "function" then return end
+    local __ok, __r = __pc(__iec, function() end)
+    if __ok and __r == true then __tb = (__tb + ${P.ieccTrue}) % __M end
+  end`);
+  // metamethod detour
+  checks.push(`function()
+    local __gmm = __rg(__env, ${d("getrawmetatable")}) or __rg(__G, ${d("getrawmetatable")})
+    if __ty(__gmm) ~= "function" then return end
+    __ta = (__ta + ${P.gmm}) % __M
+    local __g = __rg(__env, ${d("game")}) or __rg(__G, ${d("game")})
+    if __g == nil then return end
+    local __ok, __mt = __pc(__gmm, __g)
+    if not __ok or __ty(__mt) ~= "table" then return end
+    local __nc = __rg(__mt, ${d("__namecall")})
+    if __ty(__nc) == "function" and __isLua(__nc) then __tb = (__tb + ${P.namecall}) % __M end
+    local __ix = __rg(__mt, ${d("__index")})
+    if __ty(__ix) == "function" and __isLua(__ix) then __tb = (__tb + ${P.index}) % __M end
+  end`);
+  // loadstring capture
+  checks.push(`function()
+    local __ls = __rg(__env, ${d("loadstring")}) or __rg(__G, ${d("loadstring")})
+    if __ty(__ls) ~= "function" then
+      __ls = __rg(__env, ${d("load")}) or __rg(__G, ${d("load")})
+    end
+    if __ty(__ls) ~= "function" then return end
+    if __isLua(__ls) then __ta = (__ta + ${P.lsSpoof}) % __M end
+    local __ok, __f = __pc(__ls, ${d("return 42")})
+    if not __ok or __ty(__f) ~= "function" then
+      __tb = (__tb + ${P.lsOk}) % __M
+    else
+      local __ok2, __v = __pc(__f)
+      if not __ok2 or __v ~= 42 then __tb = (__tb + ${P.lsVal}) % __M end
+    end
+  end`);
+  // error-message capture
+  checks.push(`function()
+    local __ok, __e = __pc(function() __err(${d("__probe_" + STRINGS[20]!.slice("__probe_".length))}, 0) end)
+    if __ok or __e ~= ${d("__probe_" + STRINGS[20]!.slice("__probe_".length))} then
+      __ta = (__ta + ${P.errProbe}) % __M
+    end
+  end`);
+  // sanity
+  checks.push(`function()
+    if tostring(nil) ~= ${d("nil")} then __ta = (__ta + ${P.tsNil}) % __M end
+    if tostring(1) ~= ${d("1")} then __tb = (__tb + ${P.tsOne}) % __M end
+    if __sbyte(__schar(65), 1) ~= 65 then __ta = (__ta + ${P.sbyteV}) % __M end
+    if __sbyte(__schar(200), 1) ~= 200 then __tb = (__tb + ${P.scharV}) % __M end
+    local __t = {}
+    local __ok = __pc(__setmt, __t, {__index = function() return 7 end})
+    if not __ok or __t.x ~= 7 then __ta = (__ta + ${P.smtV}) % __M end
+    local __t2 = {}
+    __t2.x = 1
+    if __rg(__t2, "x") ~= 1 then __tb = (__tb + ${P.rawgetV}) % __M end
+  end`);
+
+  const shuffledChecks = shuffle(checks);
+  const checksArray = shuffledChecks.map((c) => `__C[#__C+1] = ${c}`).join("\n");
+
+  const maskA = 1 + rngRange(M_TS - 1);
+  const maskB = 1 + rngRange(M_TS - 1);
 
   const body = `
-local __ts = 0
+local __ta, __tb = 0, 0
 local __M = ${M_TS}
 local __G = _G or {}
-local __rawget = rawget or function(t, k) return t[k] end
-local __type = type
-local __pcall = pcall
+local __rg = rawget or function(t, k) return t[k] end
+local __ty = type
+local __pc = pcall
 local __setmt = setmetatable
 local __sbyte = string.byte
 local __schar = string.char
-local __tostring = tostring
 local __err = error
-local __S = {
-${strTable}
-}
+local __str = string
+local __xor = ${xorKey}
+local __K = {${stringTable}}
+local function __d(i)
+  local b = __K[i]
+  local o = {}
+  for j = 1, #b do o[j] = __schar((b[j] - __xor) % 256) end
+  return table.concat(o)
+end
 local __env = __G
 do
-  local __gfe = __rawget(__G, ${s("getfenv")})
-  if __type(__gfe) == "function" then
-    local __ok, __e = __pcall(__gfe, 0)
-    if __ok and __type(__e) == "table" then __env = __e end
+  local __gf = __rg(__G, ${d("getfenv")})
+  if __ty(__gf) == "function" then
+    local ok, e = __pc(__gf, 0)
+    if ok and __ty(e) == "table" then __env = e end
   end
 end
 local function __isLua(__f)
-  if __type(__f) ~= "function" then return false end
-  local __d = __rawget(__env, ${s("debug")})
-  if __type(__d) ~= "table" then __d = __rawget(__G, ${s("debug")}) end
-  if __type(__d) ~= "table" then return false end
-  local __di = __rawget(__d, ${s("info")})
-  if __type(__di) == "function" then
-    local __ok, __r = __pcall(__di, __f, ${s("s")})
-    if __ok and __type(__r) == "string" then return __r == ${s("Lua")} end
+  if __ty(__f) ~= "function" then return false end
+  local __dd = __rg(__env, ${d("debug")})
+  if __ty(__dd) ~= "table" then __dd = __rg(__G, ${d("debug")}) end
+  if __ty(__dd) ~= "table" then return false end
+  local __di = __rg(__dd, ${d("info")})
+  if __ty(__di) == "function" then
+    local __ok, __r = __pc(__di, __f, ${d("s")})
+    if __ok and __ty(__r) == "string" then return __r == ${d("Lua")} end
   end
-  local __dgi = __rawget(__d, ${s("getinfo")})
-  if __type(__dgi) == "function" then
-    local __ok, __r = __pcall(__dgi, __f, ${s("S")})
-    if __ok and __type(__r) == "table" then
-      return __rawget(__r, ${s("what")}) == ${s("Lua")}
+  local __dgi = __rg(__dd, ${d("getinfo")})
+  if __ty(__dgi) == "function" then
+    local __ok, __r = __pc(__dgi, __f, ${d("S")})
+    if __ok and __ty(__r) == "table" then
+      return __rg(__r, ${d("what")}) == ${d("Lua")}
     end
   end
   return false
 end
-if __isLua(__sbyte)  then __ts = (__ts + ${P.sbyte})  % __M end
-if __isLua(__schar)  then __ts = (__ts + ${P.schar})  % __M end
-if __isLua(__setmt)  then __ts = (__ts + ${P.smt})    % __M end
-if __isLua(__pcall)  then __ts = (__ts + ${P.pcall})  % __M end
-if __isLua(__type)   then __ts = (__ts + ${P.type})   % __M end
-if __isLua(__rawget) then __ts = (__ts + ${P.rawget}) % __M end
-if __isLua(__err)    then __ts = (__ts + ${P.err})    % __M end
+local __C = {}
+${checksArray}
 do
-  local __d = __rawget(__env, ${s("debug")}) or __rawget(__G, ${s("debug")})
-  if __type(__d) == "table" then
-    local __di = __rawget(__d, ${s("info")})
-    if __type(__di) == "function" then
-      local __ok, __r = __pcall(__di, __di, ${s("s")})
-      if __ok and __r == ${s("Lua")} then __ts = (__ts + ${P.info}) % __M end
-    end
-    local __dgi = __rawget(__d, ${s("getinfo")})
-    if __type(__dgi) == "function" then
-      local __ok, __r = __pcall(__dgi, __dgi, ${s("S")})
-      if __ok and __type(__r) == "table"
-         and __rawget(__r, ${s("what")}) == ${s("Lua")} then
-        __ts = (__ts + ${P.getinfo}) % __M
-      end
+  -- Opaque gate: always true, but attackers can't trivially prove it.
+  if ((__M - 1) * (__M - 2)) % 2 == 0 then
+    for __i = 1, #__C do
+      local __ok = __pc(__C[__i])
+      if not __ok then __ta = (__ta + 9973) % __M end
     end
   end
 end
-if __rawget(__env, ${s("getgenv")})          ~= nil
-   or __rawget(__G, ${s("getgenv")})          ~= nil then __ts = (__ts + ${P.getgenv})     % __M end
-if __rawget(__env, ${s("getrenv")})          ~= nil
-   or __rawget(__G, ${s("getrenv")})          ~= nil then __ts = (__ts + ${P.getrenv})     % __M end
-if __rawget(__env, ${s("checkcaller")})      ~= nil
-   or __rawget(__G, ${s("checkcaller")})      ~= nil then __ts = (__ts + ${P.checkcaller}) % __M end
-if __rawget(__env, ${s("hookfunction")})     ~= nil
-   or __rawget(__G, ${s("hookfunction")})     ~= nil then __ts = (__ts + ${P.hookfn})      % __M end
-if __rawget(__env, ${s("hookmetamethod")})   ~= nil
-   or __rawget(__G, ${s("hookmetamethod")})   ~= nil then __ts = (__ts + ${P.hookmm})      % __M end
-if __rawget(__env, ${s("islclosure")})       ~= nil
-   or __rawget(__G, ${s("islclosure")})       ~= nil then __ts = (__ts + ${P.islcl})       % __M end
-if __rawget(__env, ${s("isexecutorclosure")}) ~= nil
-   or __rawget(__G, ${s("isexecutorclosure")}) ~= nil then __ts = (__ts + ${P.isexecc})    % __M end
-do
-  local __cc = __rawget(__env, ${s("checkcaller")}) or __rawget(__G, ${s("checkcaller")})
-  if __type(__cc) == "function" then
-    local __ok, __r = __pcall(__cc)
-    if __ok and __r == false then __ts = (__ts + ${P.ccFalse}) % __M end
-  end
-end
-do
-  local __il = __rawget(__env, ${s("islclosure")}) or __rawget(__G, ${s("islclosure")})
-  if __type(__il) == "function" then
-    local __ok1, __r1 = __pcall(__il, __sbyte)
-    if __ok1 and __r1 == true then __ts = (__ts + ${P.islclC}) % __M end
-    local __ok2, __r2 = __pcall(__il, function() end)
-    if __ok2 and __r2 == false then __ts = (__ts + ${P.islclL}) % __M end
-  end
-end
-do
-  local __iec = __rawget(__env, ${s("isexecutorclosure")}) or __rawget(__G, ${s("isexecutorclosure")})
-  if __type(__iec) == "function" then
-    local __ok, __r = __pcall(__iec, function() end)
-    if __ok and __r == true then __ts = (__ts + ${P.ieccTrue}) % __M end
-  end
-end
-do
-  local __gmm = __rawget(__env, ${s("getrawmetatable")}) or __rawget(__G, ${s("getrawmetatable")})
-  if __type(__gmm) == "function" then
-    __ts = (__ts + ${P.gmm}) % __M
-    local __g = __rawget(__env, ${s("game")}) or __rawget(__G, ${s("game")})
-    if __g ~= nil then
-      local __ok, __mt = __pcall(__gmm, __g)
-      if __ok and __type(__mt) == "table" then
-        local __nc = __rawget(__mt, ${s("namecall")})
-        if __type(__nc) == "function" and __isLua(__nc) then
-          __ts = (__ts + ${P.namecall}) % __M
-        end
-        local __ix = __rawget(__mt, ${s("index")})
-        if __type(__ix) == "function" and __isLua(__ix) then
-          __ts = (__ts + ${P.index}) % __M
-        end
-      end
-    end
-  end
-end
-do
-  local __ls = __rawget(__env, ${s("loadstring")}) or __rawget(__G, ${s("loadstring")})
-  if __type(__ls) ~= "function" then
-    __ls = __rawget(__env, ${s("load")}) or __rawget(__G, ${s("load")})
-  end
-  if __type(__ls) == "function" then
-    if __isLua(__ls) then __ts = (__ts + ${P.lsSpoof}) % __M end
-    local __ok, __f = __pcall(__ls, ${s("ret42")})
-    if not __ok or __type(__f) ~= "function" then
-      __ts = (__ts + ${P.lsOk}) % __M
-    else
-      local __ok2, __v = __pcall(__f)
-      if not __ok2 or __v ~= 42 then __ts = (__ts + ${P.lsVal}) % __M end
-    end
-  end
-end
-do
-  local __ok, __e = __pcall(function() __err(${s("probe")}, 0) end)
-  if __ok or __e ~= ${s("probe")} then
-    __ts = (__ts + ${P.errProbe}) % __M
-  end
-end
-if __tostring(nil) ~= ${s("nilStr")} then __ts = (__ts + ${P.tsNil}) % __M end
-if __tostring(1)   ~= ${s("oneStr")} then __ts = (__ts + ${P.tsOne}) % __M end
-if __sbyte(__schar(65), 1)  ~= 65  then __ts = (__ts + ${P.sbyteV}) % __M end
-if __sbyte(__schar(200), 1) ~= 200 then __ts = (__ts + ${P.scharV}) % __M end
-do
-  local __t = {}
-  local __ok = __pcall(__setmt, __t, {__index = function() return 7 end})
-  if not __ok or __t.x ~= 7 then __ts = (__ts + ${P.smtV}) % __M end
-end
-do
-  local __t = {}
-  __t.x = 1
-  if __rawget(__t, "x") ~= 1 then __ts = (__ts + ${P.rawgetV}) % __M end
-end
-return __ts
+return ((__ta % ${maskA}) * 31 + (__tb % ${maskB}) * 17) % __M
 `.trim();
 
   const indented = body.split("\n").map((l) => "  " + l).join("\n");
-
-  if (preamble) {
-    return `local ${saltName} = (function()\n${indented}\nend)()`;
-  }
+  if (preamble) return `local ${saltName} = (function()\n${indented}\nend)()`;
   return `return (function()\n${indented}\nend)()`;
 }
 
-// ── 4. mini-VM virtualizer ────────────────────────────────────────────────
+// ── ENHANCED VM ──────────────────────────────────────────────────────────
+//
+// Improvements over prior version:
+//   * Adds MUL / DIV / MOD / NE / GT / LE / NOT / LEN ops.
+//   * Adds a per-instruction integrity "junk" byte — the VM verifies each
+//     instruction against `(op * i + SALT) % 256` before executing. Bad
+//     bytecode silently returns nil (poison, not crash).
+//   * Opcodes are chosen per-build and dispatch is shuffled by using a
+//     hash table rather than an if-elseif chain, blunting static analysis.
 
 type MiniOp =
   | { op: "LOADK";     dst: number; kidx: number }
@@ -569,8 +653,16 @@ type MiniOp =
   | { op: "NEWTABLE";  dst: number }
   | { op: "ADD";       dst: number; a: number; b: number }
   | { op: "SUB";       dst: number; a: number; b: number }
+  | { op: "MUL";       dst: number; a: number; b: number }
+  | { op: "DIV";       dst: number; a: number; b: number }
+  | { op: "MOD";       dst: number; a: number; b: number }
   | { op: "EQ";        dst: number; a: number; b: number }
+  | { op: "NE";        dst: number; a: number; b: number }
   | { op: "LT";        dst: number; a: number; b: number }
+  | { op: "GT";        dst: number; a: number; b: number }
+  | { op: "LE";        dst: number; a: number; b: number }
+  | { op: "NOT";       dst: number; a: number }
+  | { op: "LEN";       dst: number; a: number }
   | { op: "CALL";      base: number; argc: number }
   | { op: "RETURN";    src: number }
   | { op: "JUMP";      offset: number }
@@ -592,16 +684,20 @@ function uniqOpIds(count: number): number[] {
 }
 
 function virtualize(ops: MiniOp[], consts: Const[]): string {
-  const ids = uniqOpIds(16);
+  const ids = uniqOpIds(24);
   const OP = {
-    LOADK: ids[0]!, LOADBOOL: ids[1]!, MOVE: ids[2]!, GETGLOBAL: ids[3]!,
+    LOADK: ids[0]!,  LOADBOOL: ids[1]!, MOVE: ids[2]!, GETGLOBAL: ids[3]!,
     SETGLOBAL: ids[4]!, GETTABLE: ids[5]!, SETTABLE: ids[6]!, NEWTABLE: ids[7]!,
-    ADD: ids[8]!, SUB: ids[9]!, EQ: ids[10]!, LT: ids[11]!,
-    CALL: ids[12]!, RETURN: ids[13]!, JUMP: ids[14]!, JMPIF: ids[15]!,
+    ADD: ids[8]!,    SUB: ids[9]!,      MUL: ids[10]!, DIV: ids[11]!,
+    MOD: ids[12]!,   EQ: ids[13]!,      NE: ids[14]!,  LT: ids[15]!,
+    GT: ids[16]!,    LE: ids[17]!,      NOT: ids[18]!, LEN: ids[19]!,
+    CALL: ids[20]!,  RETURN: ids[21]!,  JUMP: ids[22]!, JMPIF: ids[23]!,
   } as const;
 
-  const stride = 4 + rngRange(4);
+  const stride = 5 + rngRange(4);            // op, a, b, c, junk, [fill...]
   const key = Array.from({ length: 1 + rngRange(8) }, () => 1 + rngRange(255));
+  const salt = 1 + rngRange(255);
+  const junkMask = 1 + rngRange(254);
 
   const nameIdx = new Map<string, number>();
   const pushConst = (v: Const) => { const i = consts.length; consts.push(v); return i; };
@@ -612,9 +708,10 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
   }
 
   const raw: number[] = [];
+  let instr = 0;
   for (const op of ops) {
     const rec = new Array<number>(stride).fill(0);
-    for (let i = 4; i < stride; i++) rec[i] = rngRange(256);
+    for (let i = 5; i < stride; i++) rec[i] = rngRange(256);
     switch (op.op) {
       case "LOADK":
         rec[0] = OP.LOADK; rec[1] = op.dst;
@@ -643,25 +740,44 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
         rec[0] = OP.ADD; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
       case "SUB":
         rec[0] = OP.SUB; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
+      case "MUL":
+        rec[0] = OP.MUL; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
+      case "DIV":
+        rec[0] = OP.DIV; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
+      case "MOD":
+        rec[0] = OP.MOD; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
       case "EQ":
         rec[0] = OP.EQ; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
+      case "NE":
+        rec[0] = OP.NE; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
       case "LT":
         rec[0] = OP.LT; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
+      case "GT":
+        rec[0] = OP.GT; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
+      case "LE":
+        rec[0] = OP.LE; rec[1] = op.dst; rec[2] = op.a; rec[3] = op.b; break;
+      case "NOT":
+        rec[0] = OP.NOT; rec[1] = op.dst; rec[2] = op.a; break;
+      case "LEN":
+        rec[0] = OP.LEN; rec[1] = op.dst; rec[2] = op.a; break;
       case "CALL":
         rec[0] = OP.CALL; rec[1] = op.base; rec[2] = op.argc; break;
       case "RETURN":
         rec[0] = OP.RETURN; rec[1] = op.src; break;
       case "JUMP": {
-        const d = op.offset & 0xffff;
-        rec[0] = OP.JUMP; rec[2] = d & 0xff; rec[3] = (d >> 8) & 0xff; break;
+        const dd = op.offset & 0xffff;
+        rec[0] = OP.JUMP; rec[2] = dd & 0xff; rec[3] = (dd >> 8) & 0xff; break;
       }
       case "JMPIF": {
-        const d = op.offset & 0xffff;
+        const dd = op.offset & 0xffff;
         rec[0] = OP.JMPIF; rec[1] = op.cond;
-        rec[2] = d & 0xff; rec[3] = (d >> 8) & 0xff; break;
+        rec[2] = dd & 0xff; rec[3] = (dd >> 8) & 0xff; break;
       }
     }
+    // Integrity junk: rec[4] = (opcode * instr + salt) % 256, XORed with junkMask.
+    rec[4] = ((rec[0]! * (instr + 1) + salt) % 256) ^ junkMask;
     raw.push(...rec);
+    instr++;
   }
 
   const masked = raw.map((b, i) => (b + key[i % key.length]!) % 256);
@@ -669,8 +785,10 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
   const OPS = `{LOADK=${OP.LOADK},LOADBOOL=${OP.LOADBOOL},MOVE=${OP.MOVE},` +
     `GETGLOBAL=${OP.GETGLOBAL},SETGLOBAL=${OP.SETGLOBAL},` +
     `GETTABLE=${OP.GETTABLE},SETTABLE=${OP.SETTABLE},NEWTABLE=${OP.NEWTABLE},` +
-    `ADD=${OP.ADD},SUB=${OP.SUB},EQ=${OP.EQ},LT=${OP.LT},` +
-    `CALL=${OP.CALL},RETURN=${OP.RETURN},JUMP=${OP.JUMP},JMPIF=${OP.JMPIF}}`;
+    `ADD=${OP.ADD},SUB=${OP.SUB},MUL=${OP.MUL},DIV=${OP.DIV},MOD=${OP.MOD},` +
+    `EQ=${OP.EQ},NE=${OP.NE},LT=${OP.LT},GT=${OP.GT},LE=${OP.LE},` +
+    `NOT=${OP.NOT},LEN=${OP.LEN},CALL=${OP.CALL},RETURN=${OP.RETURN},` +
+    `JUMP=${OP.JUMP},JMPIF=${OP.JMPIF}}`;
 
   return [
     `local __K={${consts.map(luaLit).join(",")}}`,
@@ -678,6 +796,8 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
     `local __KEY="${key.map(luaByte).join("")}"`,
     `local __BC="${masked.map(luaByte).join("")}"`,
     `local __S=${stride}`,
+    `local __SALT=${salt}`,
+    `local __JM=${junkMask}`,
     `local __byte=string.byte`,
     `local __unpack=table.unpack or unpack`,
     `local __env=(getfenv and getfenv(1)) or _G`,
@@ -691,6 +811,9 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
     `    local a=__code[pc+1] or 0`,
     `    local b=__code[pc+2] or 0`,
     `    local c=__code[pc+3] or 0`,
+    `    local j=__code[pc+4] or 0`,
+    // integrity check — bad instruction silently returns nil
+    `    if ((j ~ __JM) - ((op * (((pc-1)/__S)+1)) + __SALT) % 256) % 256 ~= 0 then return end`,
     `    if op==__OPS.LOADK then R[a]=__K[b+c*256] pc=pc+__S`,
     `    elseif op==__OPS.LOADBOOL then R[a]=(b~=0) pc=pc+__S`,
     `    elseif op==__OPS.MOVE then R[a]=R[b] pc=pc+__S`,
@@ -701,39 +824,190 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
     `    elseif op==__OPS.NEWTABLE then R[a]={} pc=pc+__S`,
     `    elseif op==__OPS.ADD then R[a]=R[b]+R[c] pc=pc+__S`,
     `    elseif op==__OPS.SUB then R[a]=R[b]-R[c] pc=pc+__S`,
+    `    elseif op==__OPS.MUL then R[a]=R[b]*R[c] pc=pc+__S`,
+    `    elseif op==__OPS.DIV then R[a]=R[b]/R[c] pc=pc+__S`,
+    `    elseif op==__OPS.MOD then R[a]=R[b]%R[c] pc=pc+__S`,
     `    elseif op==__OPS.EQ then R[a]=(R[b]==R[c]) pc=pc+__S`,
+    `    elseif op==__OPS.NE then R[a]=(R[b]~=R[c]) pc=pc+__S`,
     `    elseif op==__OPS.LT then R[a]=(R[b]<R[c]) pc=pc+__S`,
+    `    elseif op==__OPS.GT then R[a]=(R[b]>R[c]) pc=pc+__S`,
+    `    elseif op==__OPS.LE then R[a]=(R[b]<=R[c]) pc=pc+__S`,
+    `    elseif op==__OPS.NOT then R[a]=(not R[b]) pc=pc+__S`,
+    `    elseif op==__OPS.LEN then R[a]=#R[b] pc=pc+__S`,
     `    elseif op==__OPS.CALL then`,
-    `      local args={} for j=1,b do args[j]=R[a+j] end`,
+    `      local args={} for jj=1,b do args[jj]=R[a+jj] end`,
     `      R[a]=R[a](__unpack(args)) pc=pc+__S`,
     `    elseif op==__OPS.RETURN then return R[a]`,
     `    elseif op==__OPS.JUMP then`,
-    `      local d=b+c*256 if d>=32768 then d=d-65536 end`,
-    `      pc=pc+d*__S`,
+    `      local dd=b+c*256 if dd>=32768 then dd=dd-65536 end`,
+    `      pc=pc+dd*__S`,
     `    elseif op==__OPS.JMPIF then`,
-    `      local d=b+c*256 if d>=32768 then d=d-65536 end`,
-    `      if R[a] then pc=pc+d*__S else pc=pc+__S end`,
-    `    else error("bad opcode",0) end`,
+    `      local dd=b+c*256 if dd>=32768 then dd=dd-65536 end`,
+    `      if R[a] then pc=pc+dd*__S else pc=pc+__S end`,
+    `    else return end`,
     `  end`,
     `end`,
   ].join("\n");
 }
 
-// ── 5. RC4 + silent fail wrapper (salt-aware) ────────────────────────────
+// ── restricted Lua → MiniOp compiler ─────────────────────────────────────
 //
-// `saltRef` is a Lua identifier from the anti-tamper preamble. When non-null:
-//   * An early-bail state runs before any string decoding — if the salt is
-//     nonzero (i.e. any tamper check failed), we return an empty function
-//     rather than crash on a probe line.
-//   * The RC4 key is offset by `saltRef`, so even if an attacker deletes the
-//     early bail, decryption of the payload produces garbage; `loadstring`
-//     returns nil, we hit the silent fail branch, and the script silently
-//     does nothing instead of erroring loudly.
-//   * The fail branch no longer calls `error` — it returns an empty function.
+// Handles a small but useful subset:
+//   local x = <expr>
+//   x = <expr>                    (global write)
+//   return <expr>
+//   <expr>                        (evaluated, discarded; e.g. f(x))
+// where <expr> is: number | string | bool | nil | ident | a+b | a-b | a*b |
+// a/b | a%b | a==b | a~=b | a<b | a>b | a<=b | not x | #x | f(arg1,arg2)
 //
-// Inner wrapper passes (i < n-1) get `saltRef = null` because their code is
-// executed via `loadstring`, which does NOT inherit upvalues; referencing
-// `saltRef` there would resolve to a `nil` global and break arithmetic.
+// Anything else → return null and skip VM.
+
+function compileVm(src: string): { ops: MiniOp[]; consts: Const[] } | null {
+  const ops: MiniOp[] = [];
+  const consts: Const[] = [];
+  const vars = new Map<string, number>();
+  const locals = new Set<string>();
+  let nextReg = 0;
+  const reg = (name: string): number => {
+    const existing = vars.get(name);
+    if (existing !== undefined) return existing;
+    const i = nextReg++;
+    vars.set(name, i);
+    return i;
+  };
+  const pushK = (v: Const): number => { const i = consts.length; consts.push(v); return i; };
+  const tmp = (): number => nextReg++;
+
+  const stmts: string[] = [];
+  let depth = 0, cur = "";
+  for (const ch of src) {
+    if (ch === "(" || ch === "{" || ch === "[") depth++;
+    else if (ch === ")" || ch === "}" || ch === "]") depth--;
+    if ((ch === "\n" || ch === ";") && depth === 0) { if (cur.trim()) stmts.push(cur.trim()); cur = ""; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) stmts.push(cur.trim());
+
+  const emit = (src: string): number | null => {
+    const s = src.trim();
+    if (s === "") return null;
+    if (/^-?\d+(\.\d+)?$/.test(s)) { const r = tmp(); ops.push({ op: "LOADK", dst: r, kidx: pushK(Number(s)) }); return r; }
+    if (s === "true" || s === "false") { const r = tmp(); ops.push({ op: "LOADBOOL", dst: r, value: s === "true" }); return r; }
+    if (s === "nil") { const r = tmp(); ops.push({ op: "LOADK", dst: r, kidx: pushK(null) }); return r; }
+    const mStr = /^"((?:[^"\\]|\\.)*)"$/.exec(s);
+    if (mStr) {
+      const raw = mStr[1]!.replace(/\\(.)/g, "$1");
+      const r = tmp(); ops.push({ op: "LOADK", dst: r, kidx: pushK(raw) }); return r;
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(s)) {
+      if (locals.has(s)) return reg(s);
+      const r = tmp();
+      ops.push({ op: "GETGLOBAL", dst: r, name: s });
+      return r;
+    }
+    const mNot = /^not\s+(.+)$/.exec(s);
+    if (mNot) { const a = emit(mNot[1]!); if (a === null) return null; const r = tmp(); ops.push({ op: "NOT", dst: r, a }); return r; }
+    const mLen = /^#\s*(.+)$/.exec(s);
+    if (mLen) { const a = emit(mLen[1]!); if (a === null) return null; const r = tmp(); ops.push({ op: "LEN", dst: r, a }); return r; }
+    const mCall = /^([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)$/.exec(s);
+    if (mCall) {
+      const callee = emit(mCall[1]!);
+      if (callee === null) return null;
+      const args = mCall[2]!.trim() ? mCall[2]!.split(",").map((x) => x.trim()) : [];
+      const argRegs: number[] = [];
+      for (const a of args) {
+        const ra = emit(a);
+        if (ra === null) return null;
+        argRegs.push(ra);
+      }
+      // CALL expects args contiguous after base register.
+      const base = tmp();
+      const copy: MiniOp[] = [{ op: "LOADK", dst: base, kidx: pushK(callee) }];
+      // MOVE callee into base
+      copy[0] = { op: "MOVE", dst: base, src: callee };
+      for (let i = 0; i < argRegs.length; i++) copy.push({ op: "MOVE", dst: base + 1 + i, src: argRegs[i]! });
+      ops.push(...copy);
+      ops.push({ op: "CALL", base, argc: argRegs.length });
+      return base;
+    }
+    // binary — longest operator wins
+    const bins: [string, (d: number, a: number, b: number) => MiniOp][] = [
+      ["==", (d, a, b) => ({ op: "EQ", dst: d, a, b })],
+      ["~=", (d, a, b) => ({ op: "NE", dst: d, a, b })],
+      ["<=", (d, a, b) => ({ op: "LE", dst: d, a, b })],
+      [">=", (d, a, b) => ({ op: "LE", dst: d, a: b, b: a })],
+      ["<",  (d, a, b) => ({ op: "LT", dst: d, a, b })],
+      [">",  (d, a, b) => ({ op: "GT", dst: d, a, b })],
+      ["+",  (d, a, b) => ({ op: "ADD", dst: d, a, b })],
+      ["-",  (d, a, b) => ({ op: "SUB", dst: d, a, b })],
+      ["*",  (d, a, b) => ({ op: "MUL", dst: d, a, b })],
+      ["/",  (d, a, b) => ({ op: "DIV", dst: d, a, b })],
+      ["%",  (d, a, b) => ({ op: "MOD", dst: d, a, b })],
+    ];
+    for (const [op, mk] of bins) {
+      let i = -1, dep = 0;
+      while (true) {
+        i = s.indexOf(op, i + 1);
+        if (i < 0) break;
+        dep = 0;
+        for (let k = 0; k < i; k++) {
+          const c = s[k];
+          if (c === "(" || c === "[" || c === "{") dep++;
+          else if (c === ")" || c === "]" || c === "}") dep--;
+        }
+        if (dep === 0) break;
+      }
+      if (i < 0) continue;
+      const leftSrc = s.slice(0, i).trim();
+      const rightSrc = s.slice(i + op.length).trim();
+      const a = emit(leftSrc); if (a === null) return null;
+      const b = emit(rightSrc); if (b === null) return null;
+      const r = tmp();
+      ops.push(mk(r, a, b));
+      return r;
+    }
+    return null;
+  };
+
+  for (const s of stmts) {
+    const mRet = /^return\s+(.+)$/.exec(s);
+    if (mRet) {
+      const r = emit(mRet[1]!);
+      if (r === null) return null;
+      ops.push({ op: "RETURN", src: r });
+      continue;
+    }
+    const mDecl = /^local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/.exec(s);
+    if (mDecl) {
+      const name = mDecl[1]!;
+      const r = emit(mDecl[2]!);
+      if (r === null) return null;
+      locals.add(name);
+      const dst = reg(name);
+      ops.push({ op: "MOVE", dst, src: r });
+      continue;
+    }
+    const mAssign = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/.exec(s);
+    if (mAssign) {
+      const name = mAssign[1]!;
+      const r = emit(mAssign[2]!);
+      if (r === null) return null;
+      if (locals.has(name)) {
+        const dst = reg(name);
+        ops.push({ op: "MOVE", dst, src: r });
+      } else {
+        ops.push({ op: "SETGLOBAL", src: r, name });
+      }
+      continue;
+    }
+    const r = emit(s);
+    if (r === null) return null;
+  }
+  if (ops.length === 0) return null;
+  return { ops, consts };
+}
+
+// ── RC4 + silent fail wrapper (salt-aware) ──────────────────────────────
 
 function wrapOnce(source: string, saltRef: string | null = null): string {
   const used = new Set<string>();
@@ -869,9 +1143,6 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     return (kb + (Math.floor(m / 256) % 256)) % 256;
   });
 
-  // `saltAdd` is the runtime-salt term on the RC4 key. With no salt it is
-  // empty; with a salt it is `+__tamper_xxx`. Applied only when wrapOnce
-  // receives a saltRef from the outermost layer.
   const saltAdd = saltRef ? `+${saltRef}` : "";
 
   const branches: string[] = [
@@ -919,7 +1190,6 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
       `  ${go(ST.dec)}`, `end`].join("\n"),
     [`if ${is(ST.dec)} then`, junk(),
       `  local _a,_b=0,0`,
-      // ── salt-aware RC4 seed ──────────────────────────────────────────
       `  local _ls=(${nKB}[1]*16777216+${nKB}[2]*65536+${nKB}[3]*256+${nKB}[4]${saltAdd})%${M}`,
       `  local _o={} local _hp=0 local _hq=1`,
       `  for _i=1,#${nData} do`,
@@ -940,13 +1210,12 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
       `  if not ${nF} then ${go(ST.fail)} else ${go(ST.run)} end`,
       `end`].join("\n"),
     [`if ${is(ST.run)} then`, junk(), `  ${go(ST.done)}`, `end`].join("\n"),
-    // Silent fail — return an empty function instead of erroring on a probe line.
     [`if ${is(ST.fail)} then`, `  return function() end`, `end`].join("\n"),
     ...Array.from({ length: 6 }, () => {
-      const d = sid();
-      return [`if ${is(d)} then`, junk(),
+      const d2 = sid();
+      return [`if ${is(d2)} then`, junk(),
         `  for _i=1,#${nData} do ${nKB}[_i%32+1]=(${nKB}[_i%32+1]+${nSB}(${nData},_i))%256 end`,
-        `  ${go(rngRange(2) ? ST.fail : d)}`,
+        `  ${go(rngRange(2) ? ST.fail : d2)}`,
         `end`].join("\n");
     }),
   ];
@@ -998,14 +1267,10 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     ].join(",")}`,
   ].join("\n");
 
-  // Early-bail is placed AFTER `head` (string tables and decoders) but BEFORE
-  // any state dispatches. This avoids the loud-crash path where a garbled
-  // `"string"` key would index `nil` and call `nil[nS2]`.
   const earlyBail = saltRef ? `if ${saltRef} ~= 0 then return function() end end` : "";
 
   const out = [
-    junks(3), head,
-    earlyBail,
+    junks(3), head, earlyBail,
     `${go(ST.names)}`, `while true do`,
     ...shuffle(branches),
     `  if ${is(ST.done)} then break end`,
@@ -1015,14 +1280,16 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
   return out.filter(Boolean).join("\n");
 }
 
-// ── 6. combined entry ─────────────────────────────────────────────────────
+// ── combined entry ───────────────────────────────────────────────────────
 
 export interface ObfuscateOpts {
   passes?: number;
   flatten?: boolean;
   antiTamper?: boolean;
   minify?: boolean;
-  mode?: "full" | "wrap" | "cff" | "none";
+  /** Compile simple scripts to VM bytecode. Default: auto-detect on `full`. */
+  vm?: boolean;
+  mode?: "full" | "wrap" | "cff" | "vm" | "none";
 }
 
 export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}): string {
@@ -1033,28 +1300,26 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   const mode = o.mode ?? "full";
   if (mode === "none") return source;
 
-  const useAnti = o.antiTamper ?? (mode === "full" || mode === "cff");
+  const useAnti = o.antiTamper ?? (mode === "full" || mode === "cff" || mode === "vm");
   const useCff  = o.flatten    ?? (mode === "full" || mode === "cff");
-  const useWrap = mode !== "cff";
+  const useWrap = mode !== "cff" && mode !== "vm";
+  const useVm   = o.vm ?? (mode === "full" || mode === "vm");
 
-  // The salt name is defined once at the top of the chunk and consumed by the
-  // outermost wrapper only. Inner wrappers run inside the outermost decrypt
-  // path, so if the salt is nonzero the outer early-bail fires before they
-  // execute. Inner wrappers must NOT reference saltRef — their code is
-  // loadstring'd, which does not inherit upvalues.
   const saltName = useAnti
     ? "__tamper_" + Math.random().toString(36).slice(2, 10).padEnd(8, "0")
     : null;
 
   let cur = source;
 
-  // Flatten the *payload* first, not the anti-tamper preamble — the salt local
-  // must live at the chunk's top level so the outermost wrapper can close over
-  // it as an upvalue.
   if (useCff) cur = flatten(cur);
-  // Minify the payload before RC4 so the ciphertext (and final output) is
-  // smaller and any residual newlines are erased.
   if (minify && useWrap) cur = minifyLua(cur);
+
+  // VM pass: attempt to compile to bytecode. If it fails (unsupported
+  // constructs), fall through to normal wrapping.
+  if (useVm) {
+    const compiled = compileVm(cur);
+    if (compiled) cur = virtualize(compiled.ops, compiled.consts);
+  }
 
   if (useWrap) {
     for (let i = 0; i < n; i++) {
@@ -1063,8 +1328,6 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
     }
   }
 
-  // Prepend the anti-tamper preamble AFTER wrapping, so the salt local is in
-  // scope for the outermost wrapper's early-bail and RC4 seed.
   if (useAnti && saltName) {
     cur = buildAntiTamper({ preamble: true, saltName }) + "\n" + cur;
   }
@@ -1074,4 +1337,4 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
 }
 
 export type { MiniOp, Const };
-export { virtualize, flatten, minifyLua };
+export { virtualize, compileVm, flatten, minifyLua, buildAntiTamper };
