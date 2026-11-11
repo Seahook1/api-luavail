@@ -283,22 +283,7 @@ function flatten(source: string): string {
   return lines.join("\n");
 }
 
-// ── HEAVILY OBFUSCATED SILENT ANTI-TAMPER ────────────────────────────────
-//
-// Design:
-//   * Two independent accumulators __ta / __tb, mixed at the end.
-//   * All sensitive strings live in a XOR-masked byte-array table, decoded
-//     lazily via __d(i). No plaintext appears in output.
-//   * Checks are emitted as an *array of closures*, shuffled at build time,
-//     and dispatched via `for _i=1,#__C do __C[_i]() end`. Attackers can't
-//     pattern-match the emitter order.
-//   * Every check is a prime-add (mod 2^31 − 1); no `error` calls anywhere.
-//   * Opaque predicates wrap each check so a naïve slicer can't tell what
-//     the true condition is.
-//   * Warning install: if `getgenv` is reachable, we decode the message
-//     "this script is not to be tampered with — enhanced" and write it into
-//     genv under a fresh random key. That doubles as a getgenv detector AND
-//     as a visible marker on hostile environments.
+// ── silent anti-tamper (with opaque predicates) ──────────────────────────
 
 const M_TS = 2147483647;
 
@@ -317,13 +302,23 @@ const luaBytes = (s: string): string => {
 export interface AntiTamperOpts {
   preamble?: boolean;
   saltName?: string;
-  /** @deprecated — failures no longer raise. Kept for API compatibility. */
   onFail?: "error" | "callback";
-  /** @deprecated — failures no longer raise. Kept for API compatibility. */
   callback?: string;
-  /** Emit the "not to be tampered with" warning via getgenv. Default: true. */
   warn?: boolean;
 }
+
+// Always-true opaque predicate. Different per emission.
+const opq = (): string =>
+  pick([
+    `(${M_TS} % 2 == 1)`,
+    `((${M_TS} + 1) % 2 == 0)`,
+    `((${M_TS} * 2) % 2 == 0)`,
+    `((${M_TS} - 1) % 2 == 0)`,
+    `((${M_TS} + ${M_TS}) % 2 == 0)`,
+    `(${M_TS} > 0)`,
+    `(${M_TS} ~= 0)`,
+    `((${M_TS} % 3) ~= 0)`,
+  ]);
 
 export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
   const preamble = opts.preamble ?? false;
@@ -338,18 +333,18 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     }
   };
 
-  // String table. Every sensitive literal lives here.
   const warnMsg = "getgenv luavail — this script is not to be tampered with enhanced";
+  const probeStr = "__probe_" + Math.random().toString(36).slice(2, 10);
+  const warnKeyStr = "__tamper_notice_" + Math.random().toString(36).slice(2, 8);
+
   const STRINGS = [
     "debug", "info", "getinfo", "what", "s", "S", "Lua",
     "getgenv", "getrenv", "checkcaller",
     "hookfunction", "hookmetamethod", "islclosure", "isexecutorclosure",
     "getrawmetatable", "__namecall", "__index",
     "load", "loadstring", "game", "getfenv",
-    "__probe_" + Math.random().toString(36).slice(2, 10),
-    "return 42", "nil", "1",
-    warnMsg,
-    "__tamper_notice_" + Math.random().toString(36).slice(2, 8),
+    probeStr, "return 42", "nil", "1",
+    warnMsg, warnKeyStr,
   ];
   const S = (name: string): number => {
     const i = STRINGS.indexOf(name);
@@ -358,11 +353,9 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
   };
   const d = (name: string) => `__d(${S(name)})`;
   const wmsg = d(warnMsg);
-  const wkey = d("__tamper_notice_" + warnMsg.length + "_" + STRINGS.length);
-  // Note: `wkey` uses index of a synthetic name — we index by position so we
-  // can compute it deterministically. Below, STRINGS is indexed 1-based.
+  const wkey = d(warnKeyStr);
+  const dprobe = d(probeStr);
 
-  // Encode the string table with a per-build XOR mask.
   const xorKey = 1 + rngRange(254);
   const stringTable = STRINGS.map((s) => {
     const bytes = Array.from(new TextEncoder().encode(s));
@@ -386,36 +379,22 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     warnSet: nextP(), genvErr: nextP(),
   };
 
-  // Each check is a closure that mutates the shared accumulators __ta/__tb.
-  // Build-time shuffle means the runtime array order is unpredictable.
+  // Every check uses opaque predicates to defeat static pattern-matching.
+  const chk = (body: string): string => `function()
+    ${body}
+  end`;
+
   const checks: string[] = [];
+  checks.push(chk(`if __isLua(__sbyte) and ${opq()} then __ta = (__ta + ${P.sbyte}) % __M end`));
+  checks.push(chk(`if __isLua(__schar) and ${opq()} then __ta = (__ta + ${P.schar}) % __M end`));
+  checks.push(chk(`if __isLua(__setmt) and ${opq()} then __tb = (__tb + ${P.smt}) % __M end`));
+  checks.push(chk(`if __isLua(__pcall) and ${opq()} then __tb = (__tb + ${P.pcall}) % __M end`));
+  checks.push(chk(`if __isLua(__type) and ${opq()} then __ta = (__ta + ${P.type}) % __M end`));
+  checks.push(chk(`if __isLua(__rawget) and ${opq()} then __tb = (__tb + ${P.rawget}) % __M end`));
+  checks.push(chk(`if __isLua(__err) and ${opq()} then __ta = (__ta + ${P.err}) % __M end`));
 
-  checks.push(`function()
-    if __isLua(__sbyte) then __ta = (__ta + ${P.sbyte}) % __M end
-  end`);
-  checks.push(`function()
-    if __isLua(__schar) then __ta = (__ta + ${P.schar}) % __M end
-  end`);
-  checks.push(`function()
-    if __isLua(__setmt) then __tb = (__tb + ${P.smt}) % __M end
-  end`);
-  checks.push(`function()
-    if __isLua(__pcall) then __tb = (__tb + ${P.pcall}) % __M end
-  end`);
-  checks.push(`function()
-    if __isLua(__type) then __ta = (__ta + ${P.type}) % __M end
-  end`);
-  checks.push(`function()
-    if __isLua(__rawget) then __tb = (__tb + ${P.rawget}) % __M end
-  end`);
-  checks.push(`function()
-    if __isLua(__err) then __ta = (__ta + ${P.err}) % __M end
-  end`);
-
-  // debug.info / debug.getinfo spoof
-  checks.push(`function()
-    local __dd = __rg(__env, ${d("debug")}) or __rg(__G, ${d("debug")})
-    if __ty(__dd) == "table" then
+  checks.push(chk(`local __dd = __rg(__env, ${d("debug")}) or __rg(__G, ${d("debug")})
+    if __ty(__dd) == "table" and ${opq()} then
       local __di = __rg(__dd, ${d("info")})
       if __ty(__di) == "function" then
         local __ok, __r = __pc(__di, __di, ${d("s")})
@@ -428,13 +407,10 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
           __tb = (__tb + ${P.getinfo}) % __M
         end
       end
-    end
-  end`);
+    end`));
 
-  // getgenv presence + warning install
   if (emitWarning) {
-    checks.push(`function()
-      local __gg = __rg(__env, ${d("getgenv")}) or __rg(__G, ${d("getgenv")})
+    checks.push(chk(`local __gg = __rg(__env, ${d("getgenv")}) or __rg(__G, ${d("getgenv")})
       if __ty(__gg) ~= "function" then return end
       __ta = (__ta + ${P.getgenv}) % __M
       local __ok, __gv = __pc(__gg)
@@ -445,73 +421,47 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
       local __wm = ${wmsg}
       local __wk = ${wkey}
       local __wok = __pc(function() __gv[__wk] = __wm end)
-      if __wok then __tb = (__tb + ${P.warnSet}) % __M end
-    end`);
+      if __wok and ${opq()} then __tb = (__tb + ${P.warnSet}) % __M end`));
   } else {
-    checks.push(`function()
-      if __rg(__env, ${d("getgenv")}) ~= nil or __rg(__G, ${d("getgenv")}) ~= nil then
-        __ta = (__ta + ${P.getgenv}) % __M
-      end
-    end`);
+    checks.push(chk(`if (__rg(__env, ${d("getgenv")}) ~= nil or __rg(__G, ${d("getgenv")}) ~= nil) and ${opq()} then
+      __ta = (__ta + ${P.getgenv}) % __M
+    end`));
   }
 
-  checks.push(`function()
-    if __rg(__env, ${d("getrenv")}) ~= nil or __rg(__G, ${d("getrenv")}) ~= nil then
-      __ta = (__ta + ${P.getrenv}) % __M
-    end
-  end`);
-  checks.push(`function()
-    if __rg(__env, ${d("checkcaller")}) ~= nil or __rg(__G, ${d("checkcaller")}) ~= nil then
-      __tb = (__tb + ${P.checkcaller}) % __M
-    end
-  end`);
-  checks.push(`function()
-    if __rg(__env, ${d("hookfunction")}) ~= nil or __rg(__G, ${d("hookfunction")}) ~= nil then
-      __tb = (__tb + ${P.hookfn}) % __M
-    end
-  end`);
-  checks.push(`function()
-    if __rg(__env, ${d("hookmetamethod")}) ~= nil or __rg(__G, ${d("hookmetamethod")}) ~= nil then
-      __ta = (__ta + ${P.hookmm}) % __M
-    end
-  end`);
-  checks.push(`function()
-    if __rg(__env, ${d("islclosure")}) ~= nil or __rg(__G, ${d("islclosure")}) ~= nil then
-      __tb = (__tb + ${P.islcl}) % __M
-    end
-  end`);
-  checks.push(`function()
-    if __rg(__env, ${d("isexecutorclosure")}) ~= nil or __rg(__G, ${d("isexecutorclosure")}) ~= nil then
-      __ta = (__ta + ${P.isexecc}) % __M
-    end
-  end`);
+  checks.push(chk(`if (__rg(__env, ${d("getrenv")}) ~= nil or __rg(__G, ${d("getrenv")}) ~= nil) and ${opq()} then
+    __ta = (__ta + ${P.getrenv}) % __M
+  end`));
+  checks.push(chk(`if (__rg(__env, ${d("checkcaller")}) ~= nil or __rg(__G, ${d("checkcaller")}) ~= nil) and ${opq()} then
+    __tb = (__tb + ${P.checkcaller}) % __M
+  end`));
+  checks.push(chk(`if (__rg(__env, ${d("hookfunction")}) ~= nil or __rg(__G, ${d("hookfunction")}) ~= nil) and ${opq()} then
+    __tb = (__tb + ${P.hookfn}) % __M
+  end`));
+  checks.push(chk(`if (__rg(__env, ${d("hookmetamethod")}) ~= nil or __rg(__G, ${d("hookmetamethod")}) ~= nil) and ${opq()} then
+    __ta = (__ta + ${P.hookmm}) % __M
+  end`));
+  checks.push(chk(`if (__rg(__env, ${d("islclosure")}) ~= nil or __rg(__G, ${d("islclosure")}) ~= nil) and ${opq()} then
+    __tb = (__tb + ${P.islcl}) % __M
+  end`));
+  checks.push(chk(`if (__rg(__env, ${d("isexecutorclosure")}) ~= nil or __rg(__G, ${d("isexecutorclosure")}) ~= nil) and ${opq()} then
+    __ta = (__ta + ${P.isexecc}) % __M
+  end`));
 
-  // checkcaller semantic
-  checks.push(`function()
-    local __cc = __rg(__env, ${d("checkcaller")}) or __rg(__G, ${d("checkcaller")})
+  checks.push(chk(`local __cc = __rg(__env, ${d("checkcaller")}) or __rg(__G, ${d("checkcaller")})
     if __ty(__cc) ~= "function" then return end
     local __ok, __r = __pc(__cc)
-    if __ok and __r == false then __ta = (__ta + ${P.ccFalse}) % __M end
-  end`);
-  // islclosure semantic
-  checks.push(`function()
-    local __il = __rg(__env, ${d("islclosure")}) or __rg(__G, ${d("islclosure")})
+    if __ok and __r == false and ${opq()} then __ta = (__ta + ${P.ccFalse}) % __M end`));
+  checks.push(chk(`local __il = __rg(__env, ${d("islclosure")}) or __rg(__G, ${d("islclosure")})
     if __ty(__il) ~= "function" then return end
     local __ok1, __r1 = __pc(__il, __sbyte)
     if __ok1 and __r1 == true then __tb = (__tb + ${P.islclC}) % __M end
     local __ok2, __r2 = __pc(__il, function() end)
-    if __ok2 and __r2 == false then __tb = (__tb + ${P.islclL}) % __M end
-  end`);
-  // isexecutorclosure semantic
-  checks.push(`function()
-    local __iec = __rg(__env, ${d("isexecutorclosure")}) or __rg(__G, ${d("isexecutorclosure")})
+    if __ok2 and __r2 == false then __tb = (__tb + ${P.islclL}) % __M end`));
+  checks.push(chk(`local __iec = __rg(__env, ${d("isexecutorclosure")}) or __rg(__G, ${d("isexecutorclosure")})
     if __ty(__iec) ~= "function" then return end
     local __ok, __r = __pc(__iec, function() end)
-    if __ok and __r == true then __tb = (__tb + ${P.ieccTrue}) % __M end
-  end`);
-  // metamethod detour
-  checks.push(`function()
-    local __gmm = __rg(__env, ${d("getrawmetatable")}) or __rg(__G, ${d("getrawmetatable")})
+    if __ok and __r == true then __tb = (__tb + ${P.ieccTrue}) % __M end`));
+  checks.push(chk(`local __gmm = __rg(__env, ${d("getrawmetatable")}) or __rg(__G, ${d("getrawmetatable")})
     if __ty(__gmm) ~= "function" then return end
     __ta = (__ta + ${P.gmm}) % __M
     local __g = __rg(__env, ${d("game")}) or __rg(__G, ${d("game")})
@@ -521,11 +471,8 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     local __nc = __rg(__mt, ${d("__namecall")})
     if __ty(__nc) == "function" and __isLua(__nc) then __tb = (__tb + ${P.namecall}) % __M end
     local __ix = __rg(__mt, ${d("__index")})
-    if __ty(__ix) == "function" and __isLua(__ix) then __tb = (__tb + ${P.index}) % __M end
-  end`);
-  // loadstring capture
-  checks.push(`function()
-    local __ls = __rg(__env, ${d("loadstring")}) or __rg(__G, ${d("loadstring")})
+    if __ty(__ix) == "function" and __isLua(__ix) then __tb = (__tb + ${P.index}) % __M end`));
+  checks.push(chk(`local __ls = __rg(__env, ${d("loadstring")}) or __rg(__G, ${d("loadstring")})
     if __ty(__ls) ~= "function" then
       __ls = __rg(__env, ${d("load")}) or __rg(__G, ${d("load")})
     end
@@ -537,18 +484,12 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     else
       local __ok2, __v = __pc(__f)
       if not __ok2 or __v ~= 42 then __tb = (__tb + ${P.lsVal}) % __M end
-    end
-  end`);
-  // error-message capture
-  checks.push(`function()
-    local __ok, __e = __pc(function() __err(${d("__probe_" + STRINGS[20]!.slice("__probe_".length))}, 0) end)
-    if __ok or __e ~= ${d("__probe_" + STRINGS[20]!.slice("__probe_".length))} then
+    end`));
+  checks.push(chk(`local __ok, __e = __pc(function() __err(${dprobe}, 0) end)
+    if (__ok or __e ~= ${dprobe}) and ${opq()} then
       __ta = (__ta + ${P.errProbe}) % __M
-    end
-  end`);
-  // sanity
-  checks.push(`function()
-    if tostring(nil) ~= ${d("nil")} then __ta = (__ta + ${P.tsNil}) % __M end
+    end`));
+  checks.push(chk(`if tostring(nil) ~= ${d("nil")} then __ta = (__ta + ${P.tsNil}) % __M end
     if tostring(1) ~= ${d("1")} then __tb = (__tb + ${P.tsOne}) % __M end
     if __sbyte(__schar(65), 1) ~= 65 then __ta = (__ta + ${P.sbyteV}) % __M end
     if __sbyte(__schar(200), 1) ~= 200 then __tb = (__tb + ${P.scharV}) % __M end
@@ -557,11 +498,9 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     if not __ok or __t.x ~= 7 then __ta = (__ta + ${P.smtV}) % __M end
     local __t2 = {}
     __t2.x = 1
-    if __rg(__t2, "x") ~= 1 then __tb = (__tb + ${P.rawgetV}) % __M end
-  end`);
+    if __rg(__t2, "x") ~= 1 then __tb = (__tb + ${P.rawgetV}) % __M end`));
 
-  const shuffledChecks = shuffle(checks);
-  const checksArray = shuffledChecks.map((c) => `__C[#__C+1] = ${c}`).join("\n");
+  const checksArray = shuffle(checks).map((c) => `__C[#__C+1] = ${c}`).join("\n");
 
   const maskA = 1 + rngRange(M_TS - 1);
   const maskB = 1 + rngRange(M_TS - 1);
@@ -577,7 +516,6 @@ local __setmt = setmetatable
 local __sbyte = string.byte
 local __schar = string.char
 local __err = error
-local __str = string
 local __xor = ${xorKey}
 local __K = {${stringTable}}
 local function __d(i)
@@ -616,7 +554,6 @@ end
 local __C = {}
 ${checksArray}
 do
-  -- Opaque gate: always true, but attackers can't trivially prove it.
   if ((__M - 1) * (__M - 2)) % 2 == 0 then
     for __i = 1, #__C do
       local __ok = __pc(__C[__i])
@@ -632,15 +569,7 @@ return ((__ta % ${maskA}) * 31 + (__tb % ${maskB}) * 17) % __M
   return `return (function()\n${indented}\nend)()`;
 }
 
-// ── ENHANCED VM ──────────────────────────────────────────────────────────
-//
-// Improvements over prior version:
-//   * Adds MUL / DIV / MOD / NE / GT / LE / NOT / LEN ops.
-//   * Adds a per-instruction integrity "junk" byte — the VM verifies each
-//     instruction against `(op * i + SALT) % 256` before executing. Bad
-//     bytecode silently returns nil (poison, not crash).
-//   * Opcodes are chosen per-build and dispatch is shuffled by using a
-//     hash table rather than an if-elseif chain, blunting static analysis.
+// ── VM ───────────────────────────────────────────────────────────────────
 
 type MiniOp =
   | { op: "LOADK";     dst: number; kidx: number }
@@ -694,7 +623,7 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
     CALL: ids[20]!,  RETURN: ids[21]!,  JUMP: ids[22]!, JMPIF: ids[23]!,
   } as const;
 
-  const stride = 5 + rngRange(4);            // op, a, b, c, junk, [fill...]
+  const stride = 5 + rngRange(4);
   const key = Array.from({ length: 1 + rngRange(8) }, () => 1 + rngRange(255));
   const salt = 1 + rngRange(255);
   const junkMask = 1 + rngRange(254);
@@ -774,7 +703,6 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
         rec[2] = dd & 0xff; rec[3] = (dd >> 8) & 0xff; break;
       }
     }
-    // Integrity junk: rec[4] = (opcode * instr + salt) % 256, XORed with junkMask.
     rec[4] = ((rec[0]! * (instr + 1) + salt) % 256) ^ junkMask;
     raw.push(...rec);
     instr++;
@@ -790,6 +718,8 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
     `NOT=${OP.NOT},LEN=${OP.LEN},CALL=${OP.CALL},RETURN=${OP.RETURN},` +
     `JUMP=${OP.JUMP},JMPIF=${OP.JMPIF}}`;
 
+  const fnName = "__V" + Math.random().toString(36).slice(2, 8);
+
   return [
     `local __K={${consts.map(luaLit).join(",")}}`,
     `local __OPS=${OPS}`,
@@ -804,7 +734,7 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
     `local __code={}`,
     `do local kl=#__KEY`,
     `   for i=1,#__BC do __code[i]=(__byte(__BC,i)-__byte(__KEY,(i-1)%kl+1))%256 end end`,
-    `return function(...)`,
+    `local ${fnName}=function(...)`,
     `  local R,pc={},1`,
     `  while true do`,
     `    local op=__code[pc]`,
@@ -812,7 +742,6 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
     `    local b=__code[pc+2] or 0`,
     `    local c=__code[pc+3] or 0`,
     `    local j=__code[pc+4] or 0`,
-    // integrity check — bad instruction silently returns nil
     `    if ((j ~ __JM) - ((op * (((pc-1)/__S)+1)) + __SALT) % 256) % 256 ~= 0 then return end`,
     `    if op==__OPS.LOADK then R[a]=__K[b+c*256] pc=pc+__S`,
     `    elseif op==__OPS.LOADBOOL then R[a]=(b~=0) pc=pc+__S`,
@@ -847,20 +776,14 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
     `    else return end`,
     `  end`,
     `end`,
+    `return setmetatable({}, {`,
+    `  __call = function(_, ...) return ${fnName}(...) end,`,
+    `  __index = function(_, k) return ${fnName}[k] end,`,
+    `})`,
   ].join("\n");
 }
 
 // ── restricted Lua → MiniOp compiler ─────────────────────────────────────
-//
-// Handles a small but useful subset:
-//   local x = <expr>
-//   x = <expr>                    (global write)
-//   return <expr>
-//   <expr>                        (evaluated, discarded; e.g. f(x))
-// where <expr> is: number | string | bool | nil | ident | a+b | a-b | a*b |
-// a/b | a%b | a==b | a~=b | a<b | a>b | a<=b | not x | #x | f(arg1,arg2)
-//
-// Anything else → return null and skip VM.
 
 function compileVm(src: string): { ops: MiniOp[]; consts: Const[] } | null {
   const ops: MiniOp[] = [];
@@ -920,17 +843,12 @@ function compileVm(src: string): { ops: MiniOp[]; consts: Const[] } | null {
         if (ra === null) return null;
         argRegs.push(ra);
       }
-      // CALL expects args contiguous after base register.
       const base = tmp();
-      const copy: MiniOp[] = [{ op: "LOADK", dst: base, kidx: pushK(callee) }];
-      // MOVE callee into base
-      copy[0] = { op: "MOVE", dst: base, src: callee };
-      for (let i = 0; i < argRegs.length; i++) copy.push({ op: "MOVE", dst: base + 1 + i, src: argRegs[i]! });
-      ops.push(...copy);
+      ops.push({ op: "MOVE", dst: base, src: callee });
+      for (let i = 0; i < argRegs.length; i++) ops.push({ op: "MOVE", dst: base + 1 + i, src: argRegs[i]! });
       ops.push({ op: "CALL", base, argc: argRegs.length });
       return base;
     }
-    // binary — longest operator wins
     const bins: [string, (d: number, a: number, b: number) => MiniOp][] = [
       ["==", (d, a, b) => ({ op: "EQ", dst: d, a, b })],
       ["~=", (d, a, b) => ({ op: "NE", dst: d, a, b })],
@@ -1007,7 +925,7 @@ function compileVm(src: string): { ops: MiniOp[]; consts: Const[] } | null {
   return { ops, consts };
 }
 
-// ── RC4 + silent fail wrapper (salt-aware) ──────────────────────────────
+// ── RC4 + silent fail wrapper, salt-aware, setmetatable exit ─────────────
 
 function wrapOnce(source: string, saltRef: string | null = null): string {
   const used = new Set<string>();
@@ -1094,7 +1012,7 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     nSB = name(), nSC = name(), nLS = name(), nER = name(), nPC = name(),
     nTY = name(), nMSG = name(), nDH = name(), nTS = name(), nSL = name(),
     nRQ = name(), nTBL = name(), nTC = name(), nSRP = name(), nMath = name(),
-    nFloor = name();
+    nFloor = name(), nSM = name(), nProxy = name();
 
   const ids = new Set<number>();
   const sid = () => {
@@ -1143,7 +1061,10 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     return (kb + (Math.floor(m / 256) % 256)) % 256;
   });
 
-  const saltAdd = saltRef ? `+${saltRef}` : "";
+  // Defensive: nil salt (e.g. anti-tamper deleted) degrades gracefully to 0.
+  const saltAdd = saltRef ? `+(${saltRef} or 0)` : "";
+
+  const silentFail = `return setmetatable({}, {__call = function() end})`;
 
   const branches: string[] = [
     [`if ${is(ST.names)} then`, junk(), ...names.map((n) => `  ${n}`),
@@ -1210,7 +1131,7 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
       `  if not ${nF} then ${go(ST.fail)} else ${go(ST.run)} end`,
       `end`].join("\n"),
     [`if ${is(ST.run)} then`, junk(), `  ${go(ST.done)}`, `end`].join("\n"),
-    [`if ${is(ST.fail)} then`, `  return function() end`, `end`].join("\n"),
+    [`if ${is(ST.fail)} then`, `  ${silentFail}`, `end`].join("\n"),
     ...Array.from({ length: 6 }, () => {
       const d2 = sid();
       return [`if ${is(d2)} then`, junk(),
@@ -1238,6 +1159,7 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
   const head = [
     `local ${nCH}=string.char`,
     `local ${nSB2}=string.byte`,
+    `local ${nSM}=setmetatable`,
     `local ${nHH}=0`,
     `local ${nData}`,
     `local ${nDH}=0`,
@@ -1263,11 +1185,21 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     `local ${nKS}={${keyStored.join(",")}}`,
     `local ${[
       nState, nF, nP, nT, nH, nKB, nBox, nHP, nSTR, nSB, nSC, nLS, nER, nPC, nTY,
-      nMSG, nTS, nSL, nRQ, nTBL, nTC, nSRP, nMath, nFloor, ...nS,
+      nMSG, nTS, nSL, nRQ, nTBL, nTC, nSRP, nMath, nFloor, nSM, nProxy, ...nS,
     ].join(",")}`,
   ].join("\n");
 
-  const earlyBail = saltRef ? `if ${saltRef} ~= 0 then return function() end end` : "";
+  const earlyBail = saltRef
+    ? `if type(${saltRef}) ~= "number" or ${saltRef} ~= 0 then return setmetatable({}, {__call = function() end}) end`
+    : "";
+
+  const tail = [
+    `${nProxy} = ${nSM}({}, {`,
+    `  __call = function(_, ...) return ${nF}(...) end,`,
+    `  __index = function(_, k) return ${nF}[k] end,`,
+    `})`,
+    `return ${nProxy}`,
+  ].join("\n");
 
   const out = [
     junks(3), head, earlyBail,
@@ -1275,7 +1207,7 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     ...shuffle(branches),
     `  if ${is(ST.done)} then break end`,
     `end`,
-    `return ${nF}(...)`,
+    tail,
   ];
   return out.filter(Boolean).join("\n");
 }
@@ -1287,7 +1219,6 @@ export interface ObfuscateOpts {
   flatten?: boolean;
   antiTamper?: boolean;
   minify?: boolean;
-  /** Compile simple scripts to VM bytecode. Default: auto-detect on `full`. */
   vm?: boolean;
   mode?: "full" | "wrap" | "cff" | "vm" | "none";
 }
@@ -1314,8 +1245,6 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   if (useCff) cur = flatten(cur);
   if (minify && useWrap) cur = minifyLua(cur);
 
-  // VM pass: attempt to compile to bytecode. If it fails (unsupported
-  // constructs), fall through to normal wrapping.
   if (useVm) {
     const compiled = compileVm(cur);
     if (compiled) cur = virtualize(compiled.ops, compiled.consts);
@@ -1328,8 +1257,18 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
     }
   }
 
+  // Anti-tamper is itself RC4-wrapped (same obfuscation as the payload).
+  // It runs first, produces the salt, then the payload wrapper consumes it.
+  // N wraps = N+1 calls to fully unwind (IIFE + N proxy calls).
   if (useAnti && saltName) {
-    cur = buildAntiTamper({ preamble: true, saltName }) + "\n" + cur;
+    let antiBody = buildAntiTamper({ preamble: false });
+    if (minify) antiBody = minifyLua(antiBody);
+    let wrappedAnti = antiBody;
+    for (let i = 0; i < n; i++) {
+      wrappedAnti = wrapOnce(wrappedAnti, null);
+    }
+    const antiCalls = "()".repeat(n + 1);
+    cur = `local ${saltName} = (function()\n${wrappedAnti}\nend)${antiCalls}\n` + cur;
   }
 
   if (minify) cur = minifyLua(cur);
