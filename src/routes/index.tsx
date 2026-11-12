@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { useServerFn } from "@tanstack/react-start";
-import { registerDiscordCommands, getBotInvite } from "@/lib/discord.functions";
+import { registerDiscordCommands, getBotInvite, updateBotProfile } from "@/lib/discord.functions";
 import { createApiKey } from "@/lib/apikeys.functions";
 import { checkpointToken } from "@/lib/getkey-token";
 import { lovable } from "@/integrations/lovable";
@@ -992,6 +992,10 @@ function ScriptPanel({
 function DiscordPanel() {
   const [link, setLink] = useState<{ guild_id: string | null; link_code: string } | null>(null);
   const [invite, setInvite] = useState<string | null>(null);
+  const [botName, setBotName] = useState("Vault");
+  const [botAvatar, setBotAvatar] = useState<string | null>(null);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const saveBotProfile = useServerFn(updateBotProfile);
   const register = useServerFn(registerDiscordCommands);
   const load = async () => {
     const { data } = await supabase
@@ -1042,6 +1046,26 @@ function DiscordPanel() {
             The bot isn't configured yet (missing Discord bot details).
           </p>
         )}
+      </div>
+      <div className={step}>
+        <div className="font-bold">Bot profile</div>
+        <p className="text-xs text-muted-foreground">This changes the shared bot account name and avatar everywhere the bot is installed.</p>
+        <Input value={botName} onChange={(e) => setBotName(e.target.value)} placeholder="Bot name" maxLength={32} />
+        <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-white" onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          if (file.size > 400 * 1024) { toast.error("Avatar must be under 400 KB."); e.currentTarget.value = ""; return; }
+          const reader = new FileReader();
+          reader.onload = () => setBotAvatar(typeof reader.result === "string" ? reader.result : null);
+          reader.readAsDataURL(file);
+        }} />
+        <Button size="sm" disabled={profileBusy || botName.trim().length < 2} onClick={async () => {
+          setProfileBusy(true);
+          const result = await saveBotProfile({ data: { username: botName, avatar: botAvatar } });
+          setProfileBusy(false);
+          if (result.ok) { toast.success(result.message); setBotAvatar(null); }
+          else toast.error(result.message);
+        }}>{profileBusy ? "Saving…" : "Save bot profile"}</Button>
       </div>
       <div className={step}>
         <div className="font-bold">2. Register slash commands</div>
