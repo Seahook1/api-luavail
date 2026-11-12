@@ -118,13 +118,6 @@ function Auth() {
     });
     if (result.error) toast.error(result.error.message ?? "Google sign-in failed");
   };
-  const discord = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "discord",
-      options: { redirectTo: window.location.origin },
-    });
-    if (error) toast.error(error.message || "Discord sign-in failed");
-  };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const { error } =
@@ -175,9 +168,6 @@ function Auth() {
         </div>
         <Button type="button" variant="outline" className="w-full border-white/10 bg-white/[0.03] text-white hover:bg-white/[0.08]" onClick={google}>
           Continue with Google
-        </Button>
-        <Button type="button" variant="outline" className="w-full border-[#5865f2]/40 bg-[#5865f2]/10 text-white hover:bg-[#5865f2]/20" onClick={discord}>
-          <span className="text-lg">◉</span> Continue with Discord
         </Button>
         <button
           type="button"
