@@ -31,17 +31,24 @@ async function handleInit(request: Request): Promise<Response> {
     let scriptId: string | null = null;
     let licenseKey: string | null = null;
     let hwid: string | null = null;
+    let executor: string | null = null;
     if (request.method === "GET") {
       const u = new URL(request.url);
       scriptId = u.searchParams.get("s");
       licenseKey = u.searchParams.get("k");
       hwid = u.searchParams.get("h");
+      executor = u.searchParams.get("e");
     } else {
       const b = (await request.json().catch(() => ({}))) as Record<string, string | undefined>;
       scriptId = b["script_id"] ?? b["s"] ?? null;
       licenseKey = b["key"] ?? b["k"] ?? null;
       hwid = b["hwid"] ?? b["h"] ?? null;
+      executor = b["executor"] ?? b["e"] ?? null;
     }
+    executor = (typeof executor === "string" ? executor : "")
+      .replace(/[\\u0000-\\u001F\\u007F]/g, "")
+      .trim()
+      .slice(0, 40) || "Unknown";
     if (!scriptId || !UUID.test(scriptId) || !hwid || hwid.length > 200) return fail("Missing script_id or hwid");
 
     const ip = getRequestIP({ xForwardedFor: true }) ?? "unknown";
@@ -101,6 +108,7 @@ async function handleInit(request: Request): Promise<Response> {
       key_id: keyId,
       hwid,
       ip,
+      executor,
       canary,
       expires_at: new Date(Date.now() + 30_000).toISOString(),
     });
