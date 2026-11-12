@@ -99,7 +99,6 @@ function minifyLua(src: string, singleLine: boolean = false): string {
   };
   while (i < n) {
     const c = src[i]!;
-    // Collapse ALL whitespace to a single space (or nothing) in single-line mode.
     if (c === " " || c === "\t" || c === "\r" || c === "\n") { pending = true; i++; continue; }
     if (c === "-" && src[i + 1] === "-") {
       if (src[i + 2] === "[") {
@@ -131,13 +130,11 @@ function minifyLua(src: string, singleLine: boolean = false): string {
   }
   let result = out.join("");
   if (singleLine) {
-    // Strip any accidental newlines (e.g. inside block-comment boundaries)
     result = result.replace(/\n/g, " ");
   }
   return result;
 }
 
-// Single-line minifier wrapper
 function minifyToSingleLine(src: string): string {
   return minifyLua(src, true);
 }
@@ -1331,10 +1328,9 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
     cur = `local ${saltName} = (function()\n${wrappedAnti}\nend)${antiCalls}\n` + cur;
   }
 
-  // ── SINGLE-LINE COLLAPSE ─────────────────────────────────────────────
   if (minify) cur = minifyToSingleLine(cur);
   return cur;
 }
 
 export type { MiniOp, Const };
-export { virtualize, compileVm, flatten, minifyLua, buildAntiTamper };
+export { virtualize, compileVm, flatten, minifyLua };
