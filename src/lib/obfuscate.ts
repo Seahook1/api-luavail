@@ -31,11 +31,12 @@ const luaByte = (b: number) =>
   b >= 32 && b <= 126 && b !== 34 && b !== 92
     ? String.fromCharCode(b)
     : `\\${String(b).padStart(3, "0")}`;
-const roll = (h: number, v: number) => (h * 257 + v) % M;
 
-// FIX: safely encode any UTF-8 string into a Lua double-quoted literal body.
+// Safely encode any UTF-8 string as a Lua double-quoted literal body.
 const luaStr = (s: string): string =>
   Array.from(new TextEncoder().encode(s)).map(luaByte).join("");
+
+const roll = (h: number, v: number) => (h * 257 + v) % M;
 
 const ERR_MSGS = [
   "attempt to index a nil value",
@@ -299,19 +300,13 @@ const isPrimeNum = (n: number): boolean => {
   return true;
 };
 
-const luaBytes = (s: string): string => {
-  const bytes = Array.from(new TextEncoder().encode(s));
-  return `string.char(${bytes.join(",")})`;
-};
-
 export interface AntiTamperOpts {
   preamble?: boolean;
   saltName?: string;
   warn?: boolean;
 }
 
-// Generate massive Luraph-style garbage string tables
-// FIX: safely escape keys + values via luaStr, and drop '"' from the char pool.
+// Generate massive Luraph-style garbage string tables (safe for Lua literals).
 const genJunkTable = (name: string, size: number): string => {
   const keys = ["~", "x", "a", "b", "c", "d", "e", "f", "1", "2", "3", "4", "#", "|", "z", "!", " ", "}", "{", "$"];
   const chars = `*$@#&'~%^!()_+-=[]{}|;:,.<>/?`.split("").concat(
@@ -1207,7 +1202,6 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     ((positions.get(chunk.slot) ?? 0) + orderMask + (i + 1) * 7) % M);
   const nPool = name(), nOrder = name(), nSB2 = name();
 
-  // Inject giant junk tables
   const junkTable1 = genJunkTable(name(), 40);
   const junkTable2 = genJunkTable(name(), 20);
 
@@ -1240,10 +1234,14 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     `end`,
     `local ${nG}=(getfenv and getfenv(1)) or _G`,
     `local ${nKS}={${keyStored.join(",")}}`,
-    `local ${[
-      nState, nF, nP, nT, nH, nKB, nBox, nHP, nSTR, nSB, nSC, nLS, nER, nPC, nTY,
-      nMSG, nTS, nSL, nRQ, nTBL, nTC, nSRP, nMath, nFloor, nSM, nProxy, ...nS,
-    ].join(",")}`,
+    // Split declarations into small chunks to avoid Lua's 200-local limit.
+    `local ${nState},${nF},${nP},${nT},${nH},${nKB}`,
+    `local ${nBox},${nHP},${nSTR},${nSB},${nSC},${nLS}`,
+    `local ${nER},${nPC},${nTY},${nMSG},${nTS},${nSL}`,
+    `local ${nRQ},${nTBL},${nTC},${nSRP},${nMath},${nFloor}`,
+    `local ${nSM},${nProxy}`,
+    `local ${nS1},${nS2},${nS3},${nS4},${nS5},${nS6},${nS7},${nS8},${nS9},${nS10}`,
+    `local ${nS11},${nS12},${nS13},${nS14},${nS15},${nS16},${nS17},${nS18},${nS19},${nS20}`,
   ].join("\n");
 
   const earlyBail = saltRef
