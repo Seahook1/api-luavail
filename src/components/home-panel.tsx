@@ -55,16 +55,16 @@ const FEATURES = [
 export function HomePanel({ signedIn }: { signedIn: boolean }) {
   return (
     <div>
-      <section className="py-10 sm:py-16 text-center">
-        <p className="text-xs uppercase tracking-widest text-primary">Roblox script protection</p>
-        <h1 className="mx-auto mt-3 max-w-3xl text-3xl font-bold sm:text-5xl">
+      <section className="border-b border-white/[0.08] py-16 text-left sm:py-24">
+        <p className="text-[10px] uppercase tracking-[0.28em] text-zinc-500">Roblox script protection · Vault</p>
+        <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[0.98] tracking-[-0.055em] text-white sm:text-7xl lg:text-8xl">
           Host your script. Sell or gate it. Keep your source safe.
         </h1>
-        <p className="mx-auto mt-4 max-w-2xl text-muted-foreground">
+        <p className="mt-7 max-w-xl text-sm leading-7 text-zinc-400 sm:text-base">
           Upload your Lua, pick a key system, and share one protected loadstring. Keys, HWID lock,
           ad checkpoints, a Discord bot and an API — all in one place.
         </p>
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
+        <div className="mt-9 flex flex-wrap justify-start gap-3">
           <Button asChild size="lg">
             <Link to="/" search={{ tab: "scripts" }}>
               {signedIn ? "Open my scripts" : "Get started"}
@@ -76,17 +76,17 @@ export function HomePanel({ signedIn }: { signedIn: boolean }) {
         </div>
       </section>
 
-      <section className="grid gap-3 pb-6 sm:grid-cols-2 lg:grid-cols-3">
+      <section className="grid gap-0 pb-10 sm:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map((f) => (
-          <div key={f.title} className="rounded-lg border border-border bg-card p-4">
-            <h3 className="font-bold text-primary">{f.title}</h3>
+          <div key={f.title} className="border-b border-r border-white/[0.08] bg-transparent p-5 transition-colors hover:bg-white/[0.025]">
+            <h3 className="text-sm font-medium text-white">{f.title}</h3>
             <p className="mt-1 text-sm text-muted-foreground">{f.body}</p>
           </div>
         ))}
       </section>
 
-      <section className="mb-10 rounded-lg border border-border p-5">
-        <h2 className="text-lg font-bold">How it works</h2>
+      <section className="mb-12 border-t border-white/[0.08] py-8">
+        <h2 className="text-xl font-medium tracking-tight text-white">How it works</h2>
         <ol className="mt-3 grid gap-3 text-sm text-muted-foreground sm:grid-cols-4">
           <li>
             <span className="text-primary">1.</span> Sign in with Google or email.
