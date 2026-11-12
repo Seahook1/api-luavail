@@ -83,10 +83,9 @@ function Index() {
     await supabase.auth.signOut();
   };
   return (
-    <div className="min-h-screen bg-background text-foreground font-mono">
+    <div className="min-h-screen bg-[#0e0c13] font-sans text-zinc-100">
       <Toaster />
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <span className="text-lg font-bold text-primary">▲ VAULT</span>
+      <header className="flex items-center justify-end border-b border-white/[0.07] bg-[#0e0c13]/90 px-6 py-3">
         <div className="flex items-center gap-2">
           {session && (
             <Button variant="ghost" size="sm" onClick={signOut}>
