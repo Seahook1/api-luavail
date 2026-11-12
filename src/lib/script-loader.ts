@@ -55,11 +55,15 @@ local function getExecutor()
 end
 
 local EXECUTOR = getExecutor()
+local Players = game:GetService("Players")
+local LOCAL_PLAYER = Players.LocalPlayer
+local ROBLOX_USERNAME = LOCAL_PLAYER and tostring(LOCAL_PLAYER.Name) or ""
+local ROBLOX_DISPLAY_NAME = LOCAL_PLAYER and tostring(LOCAL_PLAYER.DisplayName) or ""
 local HttpService = game:GetService("HttpService")
 
 -- ── Step 1: init ────────────────────────────────────────────────
 local okI, initResp = pcall(function()
-  return game:HttpGet(API_BASE .. "/api/public/session/init?s=" .. SCRIPT_ID .. "&k=" .. KEY .. "&h=" .. HWID .. "&e=" .. HttpService:UrlEncode(EXECUTOR), true)
+  return game:HttpGet(API_BASE .. "/api/public/session/init?s=" .. SCRIPT_ID .. "&k=" .. KEY .. "&h=" .. HWID .. "&e=" .. HttpService:UrlEncode(EXECUTOR) .. "&u=" .. HttpService:UrlEncode(ROBLOX_USERNAME) .. "&d=" .. HttpService:UrlEncode(ROBLOX_DISPLAY_NAME), true)
 end)
 if not okI or type(initResp) ~= "string" then warn("[Loader] init network error"); return end
 if initResp:sub(1,5) == "--ERR" then warn("[Loader] " .. initResp); return end
