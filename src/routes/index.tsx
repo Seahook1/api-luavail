@@ -118,6 +118,13 @@ function Auth() {
     });
     if (result.error) toast.error(result.error.message ?? "Google sign-in failed");
   };
+  const discord = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "discord",
+      options: { redirectTo: window.location.origin },
+    });
+    if (error) toast.error(error.message || "Discord sign-in failed");
+  };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const { error } =
@@ -132,12 +139,17 @@ function Auth() {
     else if (mode === "up") toast.success("Check your email to confirm your account.");
   };
   return (
-    <main className="mx-auto max-w-md px-6 py-20">
-      <h1 className="text-3xl font-bold">Protect your scripts.</h1>
-      <p className="mt-2 text-muted-foreground">
-        License keys, HWID lock, expiry and bans. Your source never ships in the loader.
-      </p>
-      <form onSubmit={submit} className="mt-8 space-y-3">
+    <main className="mx-auto flex min-h-[75vh] max-w-md items-center px-6 py-14">
+      <div className="w-full rounded-2xl border border-violet-400/15 bg-[#100d19] p-7 shadow-[0_24px_90px_rgba(0,0,0,0.4)] sm:p-9">
+        <div className="mb-7">
+          <div className="mb-5 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-violet-400/25 bg-violet-500/10 text-lg font-bold text-violet-300">V</div>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-300">Vault access</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Protect your scripts.</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            License keys, device locking and protected script delivery in one place.
+          </p>
+        </div>
+      <form onSubmit={submit} className="space-y-3">
         <Input
           type="email"
           placeholder="email"
@@ -161,17 +173,21 @@ function Auth() {
           or
           <span className="h-px flex-1 bg-border" />
         </div>
-        <Button type="button" variant="outline" className="w-full" onClick={google}>
+        <Button type="button" variant="outline" className="w-full border-white/10 bg-white/[0.03] text-white hover:bg-white/[0.08]" onClick={google}>
           Continue with Google
+        </Button>
+        <Button type="button" variant="outline" className="w-full border-[#5865f2]/40 bg-[#5865f2]/10 text-white hover:bg-[#5865f2]/20" onClick={discord}>
+          <span className="text-lg">◉</span> Continue with Discord
         </Button>
         <button
           type="button"
-          className="text-sm text-muted-foreground underline"
+          className="text-sm text-violet-300 underline-offset-4 hover:underline"
           onClick={() => setMode(mode === "in" ? "up" : "in")}
         >
           {mode === "in" ? "Need an account? Sign up" : "Have an account? Sign in"}
         </button>
       </form>
+      </div>
     </main>
   );
 }
