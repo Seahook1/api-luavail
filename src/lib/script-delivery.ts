@@ -36,7 +36,7 @@ export async function servePayload(request: Request) {
       .eq("consumed", false)
       .eq("revoked", false)
       .gt("expires_at", now.toISOString())
-      .select("id, script_id, key_id, ip")
+      .select("id, script_id, key_id, ip, executor")
       .maybeSingle();
     if (!row) return fail("Token expired or already used");
 
@@ -56,6 +56,7 @@ export async function servePayload(request: Request) {
       script_id: script.id,
       key_id: row.key_id,
       ip: row.ip,
+      executor: row.executor ?? "Unknown",
       result: "success",
     });
 
