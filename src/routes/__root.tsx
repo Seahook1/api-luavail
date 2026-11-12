@@ -126,7 +126,7 @@ function RootComponent() {
       <SessionProvider>
         <AppTabs />
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
+        <div className="min-h-screen md:pl-[232px]"><Outlet /></div>
       </SessionProvider>
     </QueryClientProvider>
   );
