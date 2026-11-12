@@ -1,5 +1,5 @@
 // Portable Lua 5.1 / Luau obfuscator. Anti-tamper + CFF + RC4 + VM + minify.
-// Heavily obfuscated, Luraph-style output.
+// Heavily obfuscated, Luraph-style output. Outputs a single line.
 
 const M = 4294967296;
 
@@ -32,7 +32,6 @@ const luaByte = (b: number) =>
     ? String.fromCharCode(b)
     : `\\${String(b).padStart(3, "0")}`;
 
-// Safely encode any UTF-8 string as a Lua double-quoted literal body.
 const luaStr = (s: string): string =>
   Array.from(new TextEncoder().encode(s)).map(luaByte).join("");
 
@@ -81,7 +80,7 @@ function skipQuoted(src: string, i: number): number {
 
 // ── minifier ─────────────────────────────────────────────────────────────
 
-function minifyLua(src: string): string {
+function minifyLua(src: string, singleLine: boolean = false): string {
   const out: string[] = [];
   const n = src.length;
   let i = 0;
@@ -100,6 +99,7 @@ function minifyLua(src: string): string {
   };
   while (i < n) {
     const c = src[i]!;
+    // Collapse ALL whitespace to a single space (or nothing) in single-line mode.
     if (c === " " || c === "\t" || c === "\r" || c === "\n") { pending = true; i++; continue; }
     if (c === "-" && src[i + 1] === "-") {
       if (src[i + 2] === "[") {
@@ -129,7 +129,17 @@ function minifyLua(src: string): string {
     out.push(c);
     pending = false; i++;
   }
-  return out.join("");
+  let result = out.join("");
+  if (singleLine) {
+    // Strip any accidental newlines (e.g. inside block-comment boundaries)
+    result = result.replace(/\n/g, " ");
+  }
+  return result;
+}
+
+// Single-line minifier wrapper
+function minifyToSingleLine(src: string): string {
+  return minifyLua(src, true);
 }
 
 // ── CFF ──────────────────────────────────────────────────────────────────
@@ -306,7 +316,6 @@ export interface AntiTamperOpts {
   warn?: boolean;
 }
 
-// Generate massive Luraph-style garbage string tables (safe for Lua literals).
 const genJunkTable = (name: string, size: number): string => {
   const keys = ["~", "x", "a", "b", "c", "d", "e", "f", "1", "2", "3", "4", "#", "|", "z", "!", " ", "}", "{", "$"];
   const chars = `*$@#&'~%^!()_+-=[]{}|;:,.<>/?`.split("").concat(
@@ -1234,7 +1243,6 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     `end`,
     `local ${nG}=(getfenv and getfenv(1)) or _G`,
     `local ${nKS}={${keyStored.join(",")}}`,
-    // Split declarations into small chunks to avoid Lua's 200-local limit.
     `local ${nState},${nF},${nP},${nT},${nH},${nKB}`,
     `local ${nBox},${nHP},${nSTR},${nSB},${nSC},${nLS}`,
     `local ${nER},${nPC},${nTY},${nMSG},${nTS},${nSL}`,
@@ -1323,7 +1331,8 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
     cur = `local ${saltName} = (function()\n${wrappedAnti}\nend)${antiCalls}\n` + cur;
   }
 
-  if (minify) cur = minifyLua(cur);
+  // ── SINGLE-LINE COLLAPSE ─────────────────────────────────────────────
+  if (minify) cur = minifyToSingleLine(cur);
   return cur;
 }
 
