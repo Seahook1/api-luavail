@@ -61,6 +61,7 @@ type Log = {
   key_note: string | null;
   result: string;
   ip: string | null;
+  executor: string | null;
   created_at: string;
 };
 type Key = {
@@ -601,12 +602,21 @@ function ScriptPanel({
   const loadLogs = async () => {
     const { data } = await supabase
       .from("execution_logs")
-      .select("id,key_note,result,ip,created_at")
+      .select("id,key_note,result,ip,executor,created_at")
       .eq("script_id", script.id)
       .order("created_at", { ascending: false })
       .limit(25);
     setLogs(data ?? []);
   };
+  const executorSummary = logs.reduce<Record<string, number>>((counts, log) => {
+    const name = log.executor?.trim() || "Unknown";
+    counts[name] = (counts[name] ?? 0) + 1;
+    return counts;
+  }, {});
+  const topExecutors = Object.entries(executorSummary)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+  const totalLoggedRuns = logs.length;
   const toggle = async () => {
     const { error } = await supabase
       .from("scripts")
@@ -922,6 +932,28 @@ function ScriptPanel({
             Refresh
           </Button>
         </div>
+        {totalLoggedRuns > 0 && (
+          <div className="mb-3 space-y-2 rounded-md border border-border p-3">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold">Top executors</span>
+              <span className="text-muted-foreground">{totalLoggedRuns} recent runs</span>
+            </div>
+            {topExecutors.map(([name, count]) => {
+              const percent = Math.round((count / totalLoggedRuns) * 100);
+              return (
+                <div key={name} className="space-y-1">
+                  <div className="flex justify-between gap-2">
+                    <span>{name}</span>
+                    <span className="text-muted-foreground">{percent}% ({count})</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="mt-2 space-y-1 text-xs">
           {logs.length === 0 && <p className="text-muted-foreground">No runs yet.</p>}
           {logs.map((l) => (
@@ -929,8 +961,13 @@ function ScriptPanel({
               key={l.id}
               className="flex flex-wrap justify-between gap-2 rounded border border-border px-3 py-2"
             >
-              <span className={l.result === "ok" ? "text-primary" : "text-destructive"}>
-                {l.result}
+              <span className="flex items-center gap-2">
+                <span className={l.result === "ok" ? "text-primary" : "text-destructive"}>
+                  {l.result}
+                </span>
+                <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+                  {l.executor || "Unknown"}
+                </span>
               </span>
               <span className="text-muted-foreground">
                 {l.key_note ?? "—"} · {l.ip ?? "?"} · {new Date(l.created_at).toLocaleString()}
