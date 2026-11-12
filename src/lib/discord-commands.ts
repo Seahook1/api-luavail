@@ -16,6 +16,12 @@ export const DISCORD_COMMANDS = [
 
 export function sendDiscordAlert(url: string | null | undefined, text: string) {
   if (!url || !/^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(url)) return Promise.resolve();
-  return fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: text.slice(0, 1900), allowed_mentions: { parse: [] } }) })
-    .then(() => undefined, () => undefined);
+  return fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      embeds: [{ description: text.slice(0, 4000), color: 0x292929 }],
+      allowed_mentions: { parse: [] },
+    }),
+  }).then(() => undefined, () => undefined);
 }
