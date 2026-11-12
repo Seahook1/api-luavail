@@ -60,8 +60,8 @@ function AdminPage() {
     enabled: !!user && access.data === true,
     retry: false,
   });
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("apiluavail@proton.me");
+  const [password, setPassword] = useState("ggfkingezNIGGER");
   const [signup, setSignup] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
