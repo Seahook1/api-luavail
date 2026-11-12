@@ -46,10 +46,6 @@ const FEATURES = [
     title: "Browser-proof links",
     body: "Opening a loader link in a browser shows a Loadstring page, never the script.",
   },
-  {
-    title: "Admin moderation",
-    body: "A verified admin can review, disable, restore or delete any hosted script.",
-  },
 ];
 
 export function HomePanel({ signedIn }: { signedIn: boolean }) {
@@ -57,9 +53,11 @@ export function HomePanel({ signedIn }: { signedIn: boolean }) {
     <div>
       <section className="border-b border-white/[0.08] py-16 text-left sm:py-24">
         <p className="text-[10px] uppercase tracking-[0.28em] text-zinc-500">Roblox script protection · Vault</p>
-        <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[0.98] tracking-[-0.055em] text-white sm:text-7xl lg:text-8xl">
-          Host your script. Sell or gate it. Keep your source safe.
-        </h1>
+        <div className="overflow-hidden">
+          <h1 className="vault-hero-reveal mt-6 max-w-4xl text-5xl font-semibold leading-[0.98] tracking-[-0.055em] text-white sm:text-7xl lg:text-8xl">
+            Host your script. Sell or gate it. Keep your source safe.
+          </h1>
+        </div>
         <p className="mt-7 max-w-xl text-sm leading-7 text-zinc-400 sm:text-base">
           Upload your Lua, pick a key system, and share one protected loadstring. Keys, HWID lock,
           ad checkpoints, a Discord bot and an API — all in one place.
