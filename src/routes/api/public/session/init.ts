@@ -46,7 +46,7 @@ async function handleInit(request: Request): Promise<Response> {
       executor = b["executor"] ?? b["e"] ?? null;
     }
     executor = (typeof executor === "string" ? executor : "")
-      .replace(/[\\u0000-\\u001F\\u007F]/g, "")
+      .replace(/[\u0000-\u001F\u007F]/g, "")
       .trim()
       .slice(0, 40) || "Unknown";
     if (!scriptId || !UUID.test(scriptId) || !hwid || hwid.length > 200) return fail("Missing script_id or hwid");
