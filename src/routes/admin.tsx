@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ShieldCheck, Search, Trash2, Pause, Play, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAppSession } from "@/components/session-provider";
@@ -69,12 +69,31 @@ function AdminPage() {
   const [status, setStatus] = useState("all");
   const [selected, setSelected] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  // --- Password recovery state ---
+  const [forgot, setForgot] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setIsResettingPassword(true);
+        setForgot(false);
+        setMessage("");
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   const signOut = async () => {
     await queryClient.cancelQueries();
     queryClient.clear();
     await supabase.auth.signOut();
     await navigate({ to: "/admin", replace: true });
   };
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -98,6 +117,39 @@ function AdminPage() {
       setBusy(false);
     }
   };
+
+  const sendReset = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+        redirectTo: `${window.location.origin}/admin`,
+      });
+      setMessage(error ? error.message : "Recovery email sent! Check your inbox.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updatePassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        setMessage(error.message);
+        return;
+      }
+      setMessage("Password updated successfully!");
+      setNewPassword("");
+      setIsResettingPassword(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const act = async (scriptId: string, action: "disable" | "restore" | "delete") => {
     setBusy(true);
     setMessage("");
@@ -119,6 +171,7 @@ function AdminPage() {
       setDeleting(null);
     }
   };
+
   const rows = (scripts.data ?? []).filter(
     (s) =>
       `${s.name} ${s.id} ${s.owner_id}`.toLowerCase().includes(search.toLowerCase()) &&
@@ -126,6 +179,7 @@ function AdminPage() {
         (status === "disabled" ? s.moderation_disabled : !s.moderation_disabled)),
   );
   const picked = scripts.data?.find((s) => s.id === selected);
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 text-foreground sm:px-6">
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
@@ -141,46 +195,121 @@ function AdminPage() {
       </header>
       {!ready ? (
         <p>Loading…</p>
-      ) : !user ? (
-        <form onSubmit={submit} className="mx-auto max-w-sm space-y-4">
-          <h2 className="text-xl font-semibold">
-            {signup ? "Create admin account" : "Admin login"}
-          </h2>
+      ) : isResettingPassword ? (
+        // --- Set new password view (after clicking recovery link) ---
+        <form onSubmit={updatePassword} className="mx-auto max-w-sm space-y-4">
+          <h2 className="text-xl font-semibold">Set new password</h2>
           <label className="block space-y-2">
-            <span className="text-sm">Email</span>
-            <Input
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </label>
-          <label className="block space-y-2">
-            <span className="text-sm">Password</span>
+            <span className="text-sm">New password</span>
             <Input
               type="password"
-              autoComplete={signup ? "new-password" : "current-password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
               minLength={6}
               required
             />
           </label>
           <Button className="w-full" disabled={busy}>
-            {busy ? "Please wait…" : signup ? "Create account" : "Sign in as admin"}
+            {busy ? "Please wait…" : "Update password"}
           </Button>
           <Button
             type="button"
             variant="link"
             onClick={() => {
-              setSignup(!signup);
+              setIsResettingPassword(false);
+              setNewPassword("");
               setMessage("");
             }}
           >
-            {signup ? "Already registered? Sign in" : "Create admin account"}
+            Cancel
           </Button>
         </form>
+      ) : !user ? (
+        forgot ? (
+          // --- Forgot password view ---
+          <form onSubmit={sendReset} className="mx-auto max-w-sm space-y-4">
+            <h2 className="text-xl font-semibold">Reset password</h2>
+            <label className="block space-y-2">
+              <span className="text-sm">Email</span>
+              <Input
+                type="email"
+                autoComplete="email"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                required
+              />
+            </label>
+            <Button className="w-full" disabled={busy}>
+              {busy ? "Please wait…" : "Send recovery link"}
+            </Button>
+            <Button
+              type="button"
+              variant="link"
+              onClick={() => {
+                setForgot(false);
+                setMessage("");
+              }}
+            >
+              Back to sign in
+            </Button>
+          </form>
+        ) : (
+          // --- Login / signup view ---
+          <form onSubmit={submit} className="mx-auto max-w-sm space-y-4">
+            <h2 className="text-xl font-semibold">
+              {signup ? "Create admin account" : "Admin login"}
+            </h2>
+            <label className="block space-y-2">
+              <span className="text-sm">Email</span>
+              <Input
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-sm">Password</span>
+              <Input
+                type="password"
+                autoComplete={signup ? "new-password" : "current-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                minLength={6}
+                required
+              />
+            </label>
+            {!signup && (
+              <Button
+                type="button"
+                variant="link"
+                className="h-auto px-0 text-sm"
+                onClick={() => {
+                  setForgot(true);
+                  setResetEmail(email);
+                  setMessage("");
+                }}
+              >
+                Forgot password?
+              </Button>
+            )}
+            <Button className="w-full" disabled={busy}>
+              {busy ? "Please wait…" : signup ? "Create account" : "Sign in as admin"}
+            </Button>
+            <Button
+              type="button"
+              variant="link"
+              onClick={() => {
+                setSignup(!signup);
+                setMessage("");
+              }}
+            >
+              {signup ? "Already registered? Sign in" : "Create admin account"}
+            </Button>
+          </form>
+        )
       ) : access.isPending ? (
         <p>Checking admin access…</p>
       ) : access.data !== true ? (
