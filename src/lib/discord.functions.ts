@@ -27,7 +27,12 @@ export const getBotInvite = createServerFn({ method: "GET" }).handler(async () =
 export const updateBotProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: { username: string; avatar: string | null }) => data)
-  .handler(async ({ data }) => {
+  .handler(async ({ context, data }) => {
+    const { data: allowed, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError || allowed !== true) return { ok: false, message: "Administrator access required." };
     const token = process.env["DISCORD_BOT_TOKEN"];
     if (!token) return { ok: false, message: "Discord bot token is missing." };
     const username = data.username.trim();
