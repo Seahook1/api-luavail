@@ -33,6 +33,10 @@ const luaByte = (b: number) =>
     : `\\${String(b).padStart(3, "0")}`;
 const roll = (h: number, v: number) => (h * 257 + v) % M;
 
+// FIX: safely encode any UTF-8 string into a Lua double-quoted literal body.
+const luaStr = (s: string): string =>
+  Array.from(new TextEncoder().encode(s)).map(luaByte).join("");
+
 const ERR_MSGS = [
   "attempt to index a nil value",
   "attempt to call a nil value",
@@ -307,18 +311,19 @@ export interface AntiTamperOpts {
 }
 
 // Generate massive Luraph-style garbage string tables
+// FIX: safely escape keys + values via luaStr, and drop '"' from the char pool.
 const genJunkTable = (name: string, size: number): string => {
-  const keys = ["~", "x", "a", "b", "c", "d", "e", "f", "1", "2", "3", "4"];
-  const chars = `*$@#&"'~%^!()_+-=[]{}|;:,.<>/?`.split("").concat(
+  const keys = ["~", "x", "a", "b", "c", "d", "e", "f", "1", "2", "3", "4", "#", "|", "z", "!", " ", "}", "{", "$"];
+  const chars = `*$@#&'~%^!()_+-=[]{}|;:,.<>/?`.split("").concat(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".split("")
   );
   const entries: string[] = [];
   for (let i = 0; i < size; i++) {
-    const k = pick(keys) + pick(keys);
+    const k = pick(keys) + pick(keys) + (i % 100);
     let v = "";
     const len = 10 + rngRange(40);
     for (let j = 0; j < len; j++) v += pick(chars);
-    entries.push(`["${k}"]="${v}"`);
+    entries.push(`["${luaStr(k)}"]="${luaStr(v)}"`);
   }
   return `local ${name}={${entries.join(",")}}`;
 };
@@ -648,7 +653,7 @@ const luaLit = (v: Const): string => {
   if (v === null) return "nil";
   if (typeof v === "boolean") return v ? "true" : "false";
   if (typeof v === "number") return String(v);
-  return `"${Array.from(new TextEncoder().encode(v)).map(luaByte).join("")}"`;
+  return `"${luaStr(v)}"`;
 };
 
 function uniqOpIds(count: number): number[] {
@@ -1289,7 +1294,7 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   const useVm   = o.vm ?? (mode === "full" || mode === "vm");
 
   const saltName = useAnti
-    ? "IIIOIOIIIIIOIOIOIIOOI" // Use the requested variable name here as well
+    ? "IIIOIOIIIIIOIOIOIIOOI"
     : null;
 
   let cur = source;
