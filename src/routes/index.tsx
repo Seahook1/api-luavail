@@ -132,10 +132,10 @@ function Auth() {
   };
   return (
     <main className="mx-auto flex min-h-[75vh] max-w-md items-center px-6 py-14">
-      <div className="w-full rounded-2xl border border-violet-400/15 bg-[#100d19] p-7 shadow-[0_24px_90px_rgba(0,0,0,0.4)] sm:p-9">
+      <div className="w-full rounded-2xl border border-white/[0.1] bg-[#0b0b0b] p-7 shadow-[0_24px_90px_rgba(0,0,0,0.25)] sm:p-9">
         <div className="mb-7">
-          <div className="mb-5 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-violet-400/25 bg-violet-500/10 text-lg font-bold text-violet-300">V</div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-300">Vault access</p>
+          <div className="mb-5 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-violet-400/25 bg-violet-500/10 text-lg font-bold text-zinc-400">V</div>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-400">Vault access</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Protect your scripts.</h1>
           <p className="mt-2 text-sm leading-6 text-slate-400">
             License keys, device locking and protected script delivery in one place.
@@ -170,7 +170,7 @@ function Auth() {
         </Button>
         <button
           type="button"
-          className="text-sm text-violet-300 underline-offset-4 hover:underline"
+          className="text-sm text-zinc-400 underline-offset-4 hover:underline"
           onClick={() => setMode(mode === "in" ? "up" : "in")}
         >
           {mode === "in" ? "Need an account? Sign up" : "Have an account? Sign in"}
