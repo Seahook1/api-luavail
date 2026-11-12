@@ -36,7 +36,7 @@ export async function servePayload(request: Request) {
       .eq("consumed", false)
       .eq("revoked", false)
       .gt("expires_at", now.toISOString())
-      .select("id, script_id, key_id, ip, executor")
+      .select("id, script_id, key_id, executor")
       .maybeSingle();
     if (!row) return fail("Token expired or already used");
 
@@ -55,7 +55,6 @@ export async function servePayload(request: Request) {
     await db.from("execution_logs").insert({
       script_id: script.id,
       key_id: row.key_id,
-      ip: row.ip,
       executor: row.executor ?? "Unknown",
       result: "success",
     });
