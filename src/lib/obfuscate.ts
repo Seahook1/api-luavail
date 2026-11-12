@@ -1,4 +1,5 @@
 // Portable Lua 5.1 / Luau obfuscator. Anti-tamper + CFF + RC4 + VM + minify.
+// Heavily obfuscated, Luraph-style output.
 
 const M = 4294967296;
 
@@ -283,7 +284,7 @@ function flatten(source: string): string {
   return lines.join("\n");
 }
 
-// ── silent anti-tamper (with opaque predicates) ──────────────────────────
+// ── silent anti-tamper ───────────────────────────────────────────────────
 
 const M_TS = 2147483647;
 
@@ -302,23 +303,25 @@ const luaBytes = (s: string): string => {
 export interface AntiTamperOpts {
   preamble?: boolean;
   saltName?: string;
-  onFail?: "error" | "callback";
-  callback?: string;
   warn?: boolean;
 }
 
-// Always-true opaque predicate. Different per emission.
-const opq = (): string =>
-  pick([
-    `(${M_TS} % 2 == 1)`,
-    `((${M_TS} + 1) % 2 == 0)`,
-    `((${M_TS} * 2) % 2 == 0)`,
-    `((${M_TS} - 1) % 2 == 0)`,
-    `((${M_TS} + ${M_TS}) % 2 == 0)`,
-    `(${M_TS} > 0)`,
-    `(${M_TS} ~= 0)`,
-    `((${M_TS} % 3) ~= 0)`,
-  ]);
+// Generate massive Luraph-style garbage string tables
+const genJunkTable = (name: string, size: number): string => {
+  const keys = ["~", "x", "a", "b", "c", "d", "e", "f", "1", "2", "3", "4"];
+  const chars = `*$@#&"'~%^!()_+-=[]{}|;:,.<>/?`.split("").concat(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".split("")
+  );
+  const entries: string[] = [];
+  for (let i = 0; i < size; i++) {
+    const k = pick(keys) + pick(keys);
+    let v = "";
+    const len = 10 + rngRange(40);
+    for (let j = 0; j < len; j++) v += pick(chars);
+    entries.push(`["${k}"]="${v}"`);
+  }
+  return `local ${name}={${entries.join(",")}}`;
+};
 
 export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
   const preamble = opts.preamble ?? false;
@@ -379,22 +382,33 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     warnSet: nextP(), genvErr: nextP(),
   };
 
-  // Every check uses opaque predicates to defeat static pattern-matching.
-  const chk = (body: string): string => `function()
-    ${body}
-  end`;
-
   const checks: string[] = [];
-  checks.push(chk(`if __isLua(__sbyte) and ${opq()} then __ta = (__ta + ${P.sbyte}) % __M end`));
-  checks.push(chk(`if __isLua(__schar) and ${opq()} then __ta = (__ta + ${P.schar}) % __M end`));
-  checks.push(chk(`if __isLua(__setmt) and ${opq()} then __tb = (__tb + ${P.smt}) % __M end`));
-  checks.push(chk(`if __isLua(__pcall) and ${opq()} then __tb = (__tb + ${P.pcall}) % __M end`));
-  checks.push(chk(`if __isLua(__type) and ${opq()} then __ta = (__ta + ${P.type}) % __M end`));
-  checks.push(chk(`if __isLua(__rawget) and ${opq()} then __tb = (__tb + ${P.rawget}) % __M end`));
-  checks.push(chk(`if __isLua(__err) and ${opq()} then __ta = (__ta + ${P.err}) % __M end`));
 
-  checks.push(chk(`local __dd = __rg(__env, ${d("debug")}) or __rg(__G, ${d("debug")})
-    if __ty(__dd) == "table" and ${opq()} then
+  checks.push(`function()
+    if __isLua(__sbyte) then __ta = (__ta + ${P.sbyte}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__schar) then __ta = (__ta + ${P.schar}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__setmt) then __tb = (__tb + ${P.smt}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__pcall) then __tb = (__tb + ${P.pcall}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__type) then __ta = (__ta + ${P.type}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__rawget) then __tb = (__tb + ${P.rawget}) % __M end
+  end`);
+  checks.push(`function()
+    if __isLua(__err) then __ta = (__ta + ${P.err}) % __M end
+  end`);
+
+  checks.push(`function()
+    local __dd = __rg(__env, ${d("debug")}) or __rg(__G, ${d("debug")})
+    if __ty(__dd) == "table" then
       local __di = __rg(__dd, ${d("info")})
       if __ty(__di) == "function" then
         local __ok, __r = __pc(__di, __di, ${d("s")})
@@ -407,10 +421,12 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
           __tb = (__tb + ${P.getinfo}) % __M
         end
       end
-    end`));
+    end
+  end`);
 
   if (emitWarning) {
-    checks.push(chk(`local __gg = __rg(__env, ${d("getgenv")}) or __rg(__G, ${d("getgenv")})
+    checks.push(`function()
+      local __gg = __rg(__env, ${d("getgenv")}) or __rg(__G, ${d("getgenv")})
       if __ty(__gg) ~= "function" then return end
       __ta = (__ta + ${P.getgenv}) % __M
       local __ok, __gv = __pc(__gg)
@@ -421,47 +437,69 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
       local __wm = ${wmsg}
       local __wk = ${wkey}
       local __wok = __pc(function() __gv[__wk] = __wm end)
-      if __wok and ${opq()} then __tb = (__tb + ${P.warnSet}) % __M end`));
+      if __wok then __tb = (__tb + ${P.warnSet}) % __M end
+    end`);
   } else {
-    checks.push(chk(`if (__rg(__env, ${d("getgenv")}) ~= nil or __rg(__G, ${d("getgenv")}) ~= nil) and ${opq()} then
-      __ta = (__ta + ${P.getgenv}) % __M
-    end`));
+    checks.push(`function()
+      if __rg(__env, ${d("getgenv")}) ~= nil or __rg(__G, ${d("getgenv")}) ~= nil then
+        __ta = (__ta + ${P.getgenv}) % __M
+      end
+    end`);
   }
 
-  checks.push(chk(`if (__rg(__env, ${d("getrenv")}) ~= nil or __rg(__G, ${d("getrenv")}) ~= nil) and ${opq()} then
-    __ta = (__ta + ${P.getrenv}) % __M
-  end`));
-  checks.push(chk(`if (__rg(__env, ${d("checkcaller")}) ~= nil or __rg(__G, ${d("checkcaller")}) ~= nil) and ${opq()} then
-    __tb = (__tb + ${P.checkcaller}) % __M
-  end`));
-  checks.push(chk(`if (__rg(__env, ${d("hookfunction")}) ~= nil or __rg(__G, ${d("hookfunction")}) ~= nil) and ${opq()} then
-    __tb = (__tb + ${P.hookfn}) % __M
-  end`));
-  checks.push(chk(`if (__rg(__env, ${d("hookmetamethod")}) ~= nil or __rg(__G, ${d("hookmetamethod")}) ~= nil) and ${opq()} then
-    __ta = (__ta + ${P.hookmm}) % __M
-  end`));
-  checks.push(chk(`if (__rg(__env, ${d("islclosure")}) ~= nil or __rg(__G, ${d("islclosure")}) ~= nil) and ${opq()} then
-    __tb = (__tb + ${P.islcl}) % __M
-  end`));
-  checks.push(chk(`if (__rg(__env, ${d("isexecutorclosure")}) ~= nil or __rg(__G, ${d("isexecutorclosure")}) ~= nil) and ${opq()} then
-    __ta = (__ta + ${P.isexecc}) % __M
-  end`));
+  checks.push(`function()
+    if __rg(__env, ${d("getrenv")}) ~= nil or __rg(__G, ${d("getrenv")}) ~= nil then
+      __ta = (__ta + ${P.getrenv}) % __M
+    end
+  end`);
+  checks.push(`function()
+    if __rg(__env, ${d("checkcaller")}) ~= nil or __rg(__G, ${d("checkcaller")}) ~= nil then
+      __tb = (__tb + ${P.checkcaller}) % __M
+    end
+  end`);
+  checks.push(`function()
+    if __rg(__env, ${d("hookfunction")}) ~= nil or __rg(__G, ${d("hookfunction")}) ~= nil then
+      __tb = (__tb + ${P.hookfn}) % __M
+    end
+  end`);
+  checks.push(`function()
+    if __rg(__env, ${d("hookmetamethod")}) ~= nil or __rg(__G, ${d("hookmetamethod")}) ~= nil then
+      __ta = (__ta + ${P.hookmm}) % __M
+    end
+  end`);
+  checks.push(`function()
+    if __rg(__env, ${d("islclosure")}) ~= nil or __rg(__G, ${d("islclosure")}) ~= nil then
+      __tb = (__tb + ${P.islcl}) % __M
+    end
+  end`);
+  checks.push(`function()
+    if __rg(__env, ${d("isexecutorclosure")}) ~= nil or __rg(__G, ${d("isexecutorclosure")}) ~= nil then
+      __ta = (__ta + ${P.isexecc}) % __M
+    end
+  end`);
 
-  checks.push(chk(`local __cc = __rg(__env, ${d("checkcaller")}) or __rg(__G, ${d("checkcaller")})
+  checks.push(`function()
+    local __cc = __rg(__env, ${d("checkcaller")}) or __rg(__G, ${d("checkcaller")})
     if __ty(__cc) ~= "function" then return end
     local __ok, __r = __pc(__cc)
-    if __ok and __r == false and ${opq()} then __ta = (__ta + ${P.ccFalse}) % __M end`));
-  checks.push(chk(`local __il = __rg(__env, ${d("islclosure")}) or __rg(__G, ${d("islclosure")})
+    if __ok and __r == false then __ta = (__ta + ${P.ccFalse}) % __M end
+  end`);
+  checks.push(`function()
+    local __il = __rg(__env, ${d("islclosure")}) or __rg(__G, ${d("islclosure")})
     if __ty(__il) ~= "function" then return end
     local __ok1, __r1 = __pc(__il, __sbyte)
     if __ok1 and __r1 == true then __tb = (__tb + ${P.islclC}) % __M end
     local __ok2, __r2 = __pc(__il, function() end)
-    if __ok2 and __r2 == false then __tb = (__tb + ${P.islclL}) % __M end`));
-  checks.push(chk(`local __iec = __rg(__env, ${d("isexecutorclosure")}) or __rg(__G, ${d("isexecutorclosure")})
+    if __ok2 and __r2 == false then __tb = (__tb + ${P.islclL}) % __M end
+  end`);
+  checks.push(`function()
+    local __iec = __rg(__env, ${d("isexecutorclosure")}) or __rg(__G, ${d("isexecutorclosure")})
     if __ty(__iec) ~= "function" then return end
     local __ok, __r = __pc(__iec, function() end)
-    if __ok and __r == true then __tb = (__tb + ${P.ieccTrue}) % __M end`));
-  checks.push(chk(`local __gmm = __rg(__env, ${d("getrawmetatable")}) or __rg(__G, ${d("getrawmetatable")})
+    if __ok and __r == true then __tb = (__tb + ${P.ieccTrue}) % __M end
+  end`);
+  checks.push(`function()
+    local __gmm = __rg(__env, ${d("getrawmetatable")}) or __rg(__G, ${d("getrawmetatable")})
     if __ty(__gmm) ~= "function" then return end
     __ta = (__ta + ${P.gmm}) % __M
     local __g = __rg(__env, ${d("game")}) or __rg(__G, ${d("game")})
@@ -471,8 +509,10 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     local __nc = __rg(__mt, ${d("__namecall")})
     if __ty(__nc) == "function" and __isLua(__nc) then __tb = (__tb + ${P.namecall}) % __M end
     local __ix = __rg(__mt, ${d("__index")})
-    if __ty(__ix) == "function" and __isLua(__ix) then __tb = (__tb + ${P.index}) % __M end`));
-  checks.push(chk(`local __ls = __rg(__env, ${d("loadstring")}) or __rg(__G, ${d("loadstring")})
+    if __ty(__ix) == "function" and __isLua(__ix) then __tb = (__tb + ${P.index}) % __M end
+  end`);
+  checks.push(`function()
+    local __ls = __rg(__env, ${d("loadstring")}) or __rg(__G, ${d("loadstring")})
     if __ty(__ls) ~= "function" then
       __ls = __rg(__env, ${d("load")}) or __rg(__G, ${d("load")})
     end
@@ -484,12 +524,16 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     else
       local __ok2, __v = __pc(__f)
       if not __ok2 or __v ~= 42 then __tb = (__tb + ${P.lsVal}) % __M end
-    end`));
-  checks.push(chk(`local __ok, __e = __pc(function() __err(${dprobe}, 0) end)
-    if (__ok or __e ~= ${dprobe}) and ${opq()} then
+    end
+  end`);
+  checks.push(`function()
+    local __ok, __e = __pc(function() __err(${dprobe}, 0) end)
+    if __ok or __e ~= ${dprobe} then
       __ta = (__ta + ${P.errProbe}) % __M
-    end`));
-  checks.push(chk(`if tostring(nil) ~= ${d("nil")} then __ta = (__ta + ${P.tsNil}) % __M end
+    end
+  end`);
+  checks.push(`function()
+    if tostring(nil) ~= ${d("nil")} then __ta = (__ta + ${P.tsNil}) % __M end
     if tostring(1) ~= ${d("1")} then __tb = (__tb + ${P.tsOne}) % __M end
     if __sbyte(__schar(65), 1) ~= 65 then __ta = (__ta + ${P.sbyteV}) % __M end
     if __sbyte(__schar(200), 1) ~= 200 then __tb = (__tb + ${P.scharV}) % __M end
@@ -498,7 +542,8 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     if not __ok or __t.x ~= 7 then __ta = (__ta + ${P.smtV}) % __M end
     local __t2 = {}
     __t2.x = 1
-    if __rg(__t2, "x") ~= 1 then __tb = (__tb + ${P.rawgetV}) % __M end`));
+    if __rg(__t2, "x") ~= 1 then __tb = (__tb + ${P.rawgetV}) % __M end
+  end`);
 
   const checksArray = shuffle(checks).map((c) => `__C[#__C+1] = ${c}`).join("\n");
 
@@ -718,7 +763,7 @@ function virtualize(ops: MiniOp[], consts: Const[]): string {
     `NOT=${OP.NOT},LEN=${OP.LEN},CALL=${OP.CALL},RETURN=${OP.RETURN},` +
     `JUMP=${OP.JUMP},JMPIF=${OP.JMPIF}}`;
 
-  const fnName = "__V" + Math.random().toString(36).slice(2, 8);
+  const fnName = "IIIOIOIIIIIOIOIOIIOOI";
 
   return [
     `local __K={${consts.map(luaLit).join(",")}}`,
@@ -931,10 +976,12 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
   const used = new Set<string>();
   const name = (): string => {
     for (;;) {
-      let id = pick(["I", "l", "_"]);
-      const len = 8 + rngRange(10);
-      for (let i = 0; i < len; i++) id += pick(["I", "l", "1", "O", "0", "_"]);
-      if (!used.has(id)) { used.add(id); return id; }
+      let id = "";
+      const len = 15 + rngRange(10);
+      for (let i = 0; i < len; i++) id += pick(["I", "l", "1", "O", "0"]);
+      if (!/^[0-9]/.test(id)) {
+        if (!used.has(id)) { used.add(id); return id; }
+      }
     }
   };
 
@@ -1061,7 +1108,6 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     return (kb + (Math.floor(m / 256) % 256)) % 256;
   });
 
-  // Defensive: nil salt (e.g. anti-tamper deleted) degrades gracefully to 0.
   const saltAdd = saltRef ? `+(${saltRef} or 0)` : "";
 
   const silentFail = `return setmetatable({}, {__call = function() end})`;
@@ -1156,7 +1202,13 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     ((positions.get(chunk.slot) ?? 0) + orderMask + (i + 1) * 7) % M);
   const nPool = name(), nOrder = name(), nSB2 = name();
 
+  // Inject giant junk tables
+  const junkTable1 = genJunkTable(name(), 40);
+  const junkTable2 = genJunkTable(name(), 20);
+
   const head = [
+    junkTable1,
+    junkTable2,
     `local ${nCH}=string.char`,
     `local ${nSB2}=string.byte`,
     `local ${nSM}=setmetatable`,
@@ -1237,7 +1289,7 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   const useVm   = o.vm ?? (mode === "full" || mode === "vm");
 
   const saltName = useAnti
-    ? "__tamper_" + Math.random().toString(36).slice(2, 10).padEnd(8, "0")
+    ? "IIIOIOIIIIIOIOIOIIOOI" // Use the requested variable name here as well
     : null;
 
   let cur = source;
@@ -1257,9 +1309,6 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
     }
   }
 
-  // Anti-tamper is itself RC4-wrapped (same obfuscation as the payload).
-  // It runs first, produces the salt, then the payload wrapper consumes it.
-  // N wraps = N+1 calls to fully unwind (IIFE + N proxy calls).
   if (useAnti && saltName) {
     let antiBody = buildAntiTamper({ preamble: false });
     if (minify) antiBody = minifyLua(antiBody);
