@@ -36,7 +36,7 @@ export async function servePayload(request: Request) {
       .eq("consumed", false)
       .eq("revoked", false)
       .gt("expires_at", now.toISOString())
-      .select("id, script_id, key_id, executor")
+      .select("id, script_id, key_id, executor, roblox_username, roblox_display_name")
       .maybeSingle();
     if (!row) return fail("Token expired or already used");
 
@@ -56,6 +56,8 @@ export async function servePayload(request: Request) {
       script_id: script.id,
       key_id: row.key_id,
       executor: row.executor ?? "Unknown",
+      roblox_username: row.roblox_username,
+      roblox_display_name: row.roblox_display_name,
       result: "success",
     });
 
