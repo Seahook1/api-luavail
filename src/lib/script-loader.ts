@@ -27,9 +27,39 @@ local KEY = getParam("key")
 if KEY == "" then KEY = getParam("script_key") end
 KEY = tostring(KEY):gsub("[^%w_%-]", "")
 
+local function getExecutor()
+  local candidates = {}
+  if type(identifyexecutor) == "function" then
+    local ok, name = pcall(identifyexecutor)
+    if ok and name then table.insert(candidates, name) end
+  end
+  if type(getexecutorname) == "function" then
+    local ok, name = pcall(getexecutorname)
+    if ok and name then table.insert(candidates, name) end
+  end
+
+  local env = (type(getgenv) == "function" and getgenv()) or _G or {}
+  for _, key in ipairs({"executor", "Executor", "EXECUTOR", "executor_name", "ExecutorName"}) do
+    local value = env[key]
+    if value ~= nil then table.insert(candidates, value) end
+  end
+
+  for _, value in ipairs(candidates) do
+    if type(value) == "string" and value ~= "" then
+      return value:sub(1, 40)
+    elseif type(value) == "table" and type(value.Name) == "string" then
+      return value.Name:sub(1, 40)
+    end
+  end
+  return "Unknown"
+end
+
+local EXECUTOR = getExecutor()
+local HttpService = game:GetService("HttpService")
+
 -- ── Step 1: init ────────────────────────────────────────────────
 local okI, initResp = pcall(function()
-  return game:HttpGet(API_BASE .. "/api/public/session/init?s=" .. SCRIPT_ID .. "&k=" .. KEY .. "&h=" .. HWID, true)
+  return game:HttpGet(API_BASE .. "/api/public/session/init?s=" .. SCRIPT_ID .. "&k=" .. KEY .. "&h=" .. HWID .. "&e=" .. HttpService:UrlEncode(EXECUTOR), true)
 end)
 if not okI or type(initResp) ~= "string" then warn("[Loader] init network error"); return end
 if initResp:sub(1,5) == "--ERR" then warn("[Loader] " .. initResp); return end
