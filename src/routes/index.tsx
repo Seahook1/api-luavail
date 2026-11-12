@@ -61,6 +61,8 @@ type Log = {
   key_note: string | null;
   result: string;
   executor: string | null;
+  roblox_username: string | null;
+  roblox_display_name: string | null;
   created_at: string;
 };
 type Key = {
@@ -606,7 +608,7 @@ function ScriptPanel({
   const loadLogs = async () => {
     const { data } = await supabase
       .from("execution_logs")
-      .select("id,key_note,result,executor,created_at")
+      .select("id,key_note,result,executor,roblox_username,roblox_display_name,created_at")
       .eq("script_id", script.id)
       .order("created_at", { ascending: false })
       .limit(25);
@@ -931,7 +933,7 @@ function ScriptPanel({
       )}
       <div>
         <div className="flex items-center justify-between">
-          <h3 className="font-bold">Recent runs</h3>
+          <h3 className="font-bold">Executions</h3>
           <Button size="sm" variant="ghost" onClick={loadLogs}>
             Refresh
           </Button>
@@ -939,7 +941,7 @@ function ScriptPanel({
         {totalLoggedRuns > 0 && (
           <div className="mb-3 space-y-2 rounded-md border border-border p-3">
             <div className="flex items-center justify-between">
-              <span className="font-semibold">Top executors</span>
+              <span className="font-semibold">Executor breakdown</span>
               <span className="text-muted-foreground">{totalLoggedRuns} recent runs</span>
             </div>
             {topExecutors.map(([name, count]) => {
@@ -958,6 +960,7 @@ function ScriptPanel({
             })}
           </div>
         )}
+        <p className="mb-2 text-xs text-muted-foreground">Player names and executor labels are client-reported and may be inaccurate or spoofed. No IP addresses are displayed here.</p>
         <div className="mt-2 space-y-1 text-xs">
           {logs.length === 0 && <p className="text-muted-foreground">No runs yet.</p>}
           {logs.map((l) => (
@@ -965,7 +968,9 @@ function ScriptPanel({
               key={l.id}
               className="flex flex-wrap justify-between gap-2 rounded border border-border px-3 py-2"
             >
-              <span className="flex items-center gap-2">
+              <span className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="min-w-24 text-zinc-200">{l.roblox_display_name || l.roblox_username || "Unknown player"}</span>
+                {l.roblox_username && l.roblox_display_name && <span className="text-zinc-500">@{l.roblox_username}</span>}
                 <span className={l.result === "ok" ? "text-primary" : "text-destructive"}>
                   {l.result}
                 </span>
