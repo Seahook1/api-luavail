@@ -60,7 +60,6 @@ type Log = {
   id: string;
   key_note: string | null;
   result: string;
-  ip: string | null;
   executor: string | null;
   created_at: string;
 };
@@ -602,7 +601,7 @@ function ScriptPanel({
   const loadLogs = async () => {
     const { data } = await supabase
       .from("execution_logs")
-      .select("id,key_note,result,ip,executor,created_at")
+      .select("id,key_note,result,executor,created_at")
       .eq("script_id", script.id)
       .order("created_at", { ascending: false })
       .limit(25);
@@ -970,7 +969,7 @@ function ScriptPanel({
                 </span>
               </span>
               <span className="text-muted-foreground">
-                {l.key_note ?? "—"} · {l.ip ?? "?"} · {new Date(l.created_at).toLocaleString()}
+                {l.key_note ?? "—"} · {new Date(l.created_at).toLocaleString()}
               </span>
             </div>
           ))}
