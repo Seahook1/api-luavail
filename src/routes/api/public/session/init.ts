@@ -31,23 +31,32 @@ async function handleInit(request: Request): Promise<Response> {
     let licenseKey: string | null = null;
     let hwid: string | null = null;
     let executor: string | null = null;
+    let robloxUsername: string | null = null;
+    let robloxDisplayName: string | null = null;
     if (request.method === "GET") {
       const u = new URL(request.url);
       scriptId = u.searchParams.get("s");
       licenseKey = u.searchParams.get("k");
       hwid = u.searchParams.get("h");
       executor = u.searchParams.get("e");
+      robloxUsername = u.searchParams.get("u");
+      robloxDisplayName = u.searchParams.get("d");
     } else {
       const b = (await request.json().catch(() => ({}))) as Record<string, string | undefined>;
       scriptId = b["script_id"] ?? b["s"] ?? null;
       licenseKey = b["key"] ?? b["k"] ?? null;
       hwid = b["hwid"] ?? b["h"] ?? null;
       executor = b["executor"] ?? b["e"] ?? null;
+      robloxUsername = b["roblox_username"] ?? b["u"] ?? null;
+      robloxDisplayName = b["roblox_display_name"] ?? b["d"] ?? null;
     }
     executor = (typeof executor === "string" ? executor : "")
       .replace(/[\u0000-\u001F\u007F]/g, "")
       .trim()
       .slice(0, 40) || "Unknown";
+    const cleanPlayerName = (value: unknown) => (typeof value === "string" ? value : "").replace(/[^\w .-]/g, "").trim().slice(0, 32) || null;
+    robloxUsername = cleanPlayerName(robloxUsername);
+    robloxDisplayName = cleanPlayerName(robloxDisplayName);
     if (!scriptId || !UUID.test(scriptId) || !hwid || hwid.length > 200) return fail("Missing script_id or hwid");
 
     if (isRateLimited(hwid)) return fail("Rate limit exceeded");
@@ -106,6 +115,8 @@ async function handleInit(request: Request): Promise<Response> {
       key_id: keyId,
       hwid,
       executor,
+      roblox_username: robloxUsername,
+      roblox_display_name: robloxDisplayName,
       canary,
       expires_at: new Date(Date.now() + 30_000).toISOString(),
     });
