@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { getRequestIP } from "@tanstack/react-start/server";
 import { hostingAllowed } from "@/lib/moderation";
 
 const RATE_WINDOW_MS = 30_000;
@@ -51,8 +50,7 @@ async function handleInit(request: Request): Promise<Response> {
       .slice(0, 40) || "Unknown";
     if (!scriptId || !UUID.test(scriptId) || !hwid || hwid.length > 200) return fail("Missing script_id or hwid");
 
-    const ip = getRequestIP({ xForwardedFor: true }) ?? "unknown";
-    if (isRateLimited(`${ip}:${hwid}`)) return fail("Rate limit exceeded");
+    if (isRateLimited(hwid)) return fail("Rate limit exceeded");
 
     const { data: banned } = await db.from("banned_hwids").select("hwid").eq("hwid", hwid).maybeSingle();
     if (banned) return fail("HWID is banned");
@@ -107,7 +105,6 @@ async function handleInit(request: Request): Promise<Response> {
       script_id: scriptId,
       key_id: keyId,
       hwid,
-      ip,
       executor,
       canary,
       expires_at: new Date(Date.now() + 30_000).toISOString(),
