@@ -1,5 +1,5 @@
 // Portable Lua 5.1 / Luau obfuscator. Anti-tamper + CFF + RC4 + VM + minify.
-// Heavily obfuscated, Luraph-style output. Outputs a single line.
+// Heavily obfuscated, Luraph-style output. Outputs a single line with a header.
 
 const M = 4294967296;
 
@@ -1329,7 +1329,10 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   }
 
   if (minify) cur = minifyToSingleLine(cur);
-  return cur;
+  
+  // Prepend the protected-by comment at the very top
+  const header = `-- This script is protected by ObsidianVM [api-luavail.lovable.app]\n`;
+  return header + cur;
 }
 
 export type { MiniOp, Const };
