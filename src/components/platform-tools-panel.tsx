@@ -11,6 +11,8 @@ export function PlatformToolsPanel() {
   const [lockdown, setLockdown] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tickets, setTickets] = useState<any[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [deliveries, setDeliveries] = useState<any[]>([]);
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
@@ -21,9 +23,15 @@ export function PlatformToolsPanel() {
 
   const load = async () => {
     setLoading(true);
+    const { data: auth } = await supabase.auth.getUser();
+    const { data: adminResult } = auth.user ? await supabase.rpc("has_role", { _user_id: auth.user.id, _role: "admin" }) : { data: false };
+    const admin = adminResult === true;
+    setIsAdmin(admin);
+    let ticketQuery = db.from("support_tickets").select("id,owner_id,subject,message,status,reply,created_at,updated_at").order("created_at", { ascending: false }).limit(50);
+    if (!admin) ticketQuery = ticketQuery.eq("owner_id", auth.user?.id ?? "");
     const [setting, ticketRows, webhookRows] = await Promise.all([
       db.from("platform_settings").select("emergency_lockdown").maybeSingle(),
-      db.from("support_tickets").select("id,subject,message,status,reply,created_at,updated_at").order("created_at", { ascending: false }).limit(50),
+      ticketQuery,
       db.from("webhook_deliveries").select("id,script_id,event_type,status,response_code,created_at").order("created_at", { ascending: false }).limit(100),
     ]);
     setLockdown(!!setting.data?.emergency_lockdown);
@@ -62,6 +70,14 @@ export function PlatformToolsPanel() {
     else { setSubject(""); setMessage(""); toast.success("Support ticket submitted"); void load(); }
   };
 
+  const replyToTicket = async (ticketId: string) => {
+    const reply = (replyDrafts[ticketId] ?? "").trim();
+    if (!reply) return;
+    const { error } = await db.from("support_tickets").update({ reply, status: "in_progress", updated_at: new Date().toISOString() }).eq("id", ticketId);
+    if (error) toast.error(error.message);
+    else { toast.success("Reply saved"); setReplyDrafts((current) => ({ ...current, [ticketId]: "" })); void load(); }
+  };
+
   const runApiExample = async (method: "GET" | "POST") => {
     if (!apiKey.trim()) { toast.error("Enter your API key first"); return; }
     setBusy(true);
@@ -95,13 +111,13 @@ export function PlatformToolsPanel() {
       <Input value={subject} onChange={(event) => setSubject(event.target.value)} maxLength={120} placeholder="Ticket subject" />
       <Textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={4} maxLength={5000} placeholder="Describe the issue…" />
       <Button size="sm" disabled={busy || subject.trim().length < 3 || message.trim().length < 5} onClick={() => void submitTicket()}>Submit ticket</Button>
-      <div className="space-y-2">{tickets.map((ticket) => <article key={ticket.id} className="rounded-lg border border-white/[0.06] p-3"><div className="flex flex-wrap justify-between gap-2"><span className="text-sm text-zinc-200">{ticket.subject}</span><span className="text-[10px] uppercase text-zinc-500">{ticket.status.replaceAll("_"," ")}</span></div><p className="mt-2 whitespace-pre-wrap text-xs text-zinc-400">{ticket.message}</p>{ticket.reply && <p className="mt-2 border-l-2 border-violet-400 pl-3 text-xs text-violet-200">Reply: {ticket.reply}</p>}<time className="mt-2 block text-[10px] text-zinc-600">{new Date(ticket.created_at).toLocaleString()}</time></article>)}{!tickets.length && <p className="text-xs text-zinc-600">{loading ? "Loading tickets…" : "No tickets yet."}</p>}</div>
+      <div className="space-y-2">{tickets.map((ticket) => <article key={ticket.id} className="rounded-lg border border-white/[0.06] p-3"><div className="flex flex-wrap justify-between gap-2"><span className="text-sm text-zinc-200">{ticket.subject}</span><span className="text-[10px] uppercase text-zinc-500">{ticket.status.replaceAll("_"," ")}</span></div><p className="mt-2 whitespace-pre-wrap text-xs text-zinc-400">{ticket.message}</p>{ticket.reply && <p className="mt-2 border-l-2 border-violet-400 pl-3 text-xs text-violet-200">Reply: {ticket.reply}</p>}{isAdmin && <div className="mt-3 flex flex-wrap gap-2"><Input value={replyDrafts[ticket.id] ?? ""} onChange={(event) => setReplyDrafts((current) => ({ ...current, [ticket.id]: event.target.value }))} placeholder="Staff reply…" /><Button size="sm" onClick={() => void replyToTicket(ticket.id)}>Reply</Button></div>}<time className="mt-2 block text-[10px] text-zinc-600">{new Date(ticket.created_at).toLocaleString()}{isAdmin ? " · " + ticket.owner_id : ""}</time></article>)}{!tickets.length && <p className="text-xs text-zinc-600">{loading ? "Loading tickets…" : "No tickets yet."}</p>}</div>
     </div>
     <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4 space-y-3">
       <div className="flex items-center justify-between gap-2"><div><h2 className="text-sm font-semibold text-white">Webhook delivery history</h2><p className="mt-1 text-xs text-zinc-500">Recent Discord webhook delivery attempts.</p></div><Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>Refresh</Button></div>
       {deliveries.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.05] py-2 text-xs last:border-0"><span className="text-zinc-300">{item.event_type.replaceAll("_"," ")}</span><span className={item.status === "success" ? "text-emerald-300" : "text-rose-300"}>{item.status}{item.response_code ? " · HTTP " + item.response_code : ""}</span><time className="text-zinc-600">{new Date(item.created_at).toLocaleString()}</time></div>)}
       {!deliveries.length && <p className="text-xs text-zinc-600">{loading ? "Loading deliveries…" : "No webhook deliveries recorded yet."}</p>}
     </div>
-    <p className="text-[11px] text-zinc-600">No IP addresses, network addresses or raw HWIDs are collected by these tools. Support tickets currently support owner submission and viewing; staff replies require a separate admin workflow.</p>
+    <p className="text-[11px] text-zinc-600">No IP addresses, network addresses or raw HWIDs are collected by these tools. Staff can reply to tickets from this panel.</p>
   </section>;
 }
