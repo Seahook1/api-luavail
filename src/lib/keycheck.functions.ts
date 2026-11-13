@@ -45,5 +45,7 @@ export const resetHwid = createServerFn({ method: "POST" })
     if (next > Date.now())
       return { ok: false as const, message: `You can reset again on ${new Date(next).toLocaleString()}.` };
     await supabaseAdmin.from("license_keys").update({ hwid: null, hwid_reset_at: new Date().toISOString() }).eq("id", lic.id);
-    return { ok: true as const, message: "Device reset. Run the loader on your new device." };
+    // Resetting a device also ends existing sessions so the previous device cannot keep running.
+    await supabaseAdmin.from("execution_tokens").update({ revoked: true }).eq("key_id", lic.id).eq("revoked", false);
+    return { ok: true as const, message: "Device reset. Existing sessions were ended; run the loader on your new device." };
   });
