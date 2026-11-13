@@ -16,6 +16,7 @@ import { lovable } from "@/integrations/lovable";
 import { HomePanel } from "@/components/home-panel";
 import { LuaFilePicker } from "@/components/lua-file-picker";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { InsightsPanel, ActivityPanel } from "@/components/dashboard-extras";
 
 export const Route = createFileRoute("/")({
   validateSearch: (
@@ -201,7 +202,7 @@ function Dashboard() {
   return (
     <div className="mx-auto max-w-7xl px-5 py-7 sm:px-8 sm:py-9">
       {tab === "discord" && <DiscordPanel />}
-      {tab === "api" && <ApiPanel />}
+      {tab === "api" && <ApiPanel />}\n      {tab === "insights" && <InsightsPanel />}\n      {tab === "activity" && <ActivityPanel />}
       {tab === "scripts" &&
         (setupFor ? (
           <KeySystemSetup
@@ -265,7 +266,7 @@ function Dashboard() {
 }
 
 const COLS =
-  "id,name,source,executions,enabled,keyless,getkey_enabled,checkpoints,getkey_hours,discord_webhook";
+  "id,name,source,executions,enabled,keyless,getkey_enabled,checkpoints,getkey_hours,discord_webhook,maintenance_mode,webhook_success_enabled,webhook_failure_enabled";
 
 function NewScriptForm({
   onCancel,
