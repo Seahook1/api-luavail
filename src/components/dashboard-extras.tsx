@@ -32,7 +32,18 @@ export function InsightsPanel() {
     setStatus(s.error || l.error || u.error ? "error" : "online");
     setLoading(false);
   };
-  useEffect(() => { void load(); }, [range]);
+  useEffect(() => {
+    void load();
+    const channel = supabase.channel("global-dashboard-activity")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "execution_logs" }, (payload) => {
+        setLogs((current) => [payload.new, ...current].slice(0, 2000));
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "api_usage_events" }, (payload) => {
+        setUsage((current) => [payload.new, ...current].slice(0, 2000));
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [range]);
 
   const series = useMemo(() => {
     const days = Number(range);
