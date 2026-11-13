@@ -1,7 +1,7 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { LayoutDashboard, Code2, Bot, KeyRound, UserRound, ShieldCheck, ChartNoAxesCombined, ScrollText, Settings2, Activity, KeyRound } from "lucide-react";
+import { LayoutDashboard, Code2, Bot, KeyRound, UserRound, ShieldCheck, ChartNoAxesCombined, ScrollText, Settings2, Activity } from "lucide-react";
 import { useAppSession } from "@/components/session-provider";
 import { getAdminAccess } from "@/lib/admin.functions";
 import { canShowAdminTab } from "@/lib/admin-navigation";
