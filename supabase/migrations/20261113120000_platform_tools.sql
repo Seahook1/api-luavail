@@ -47,3 +47,11 @@ CREATE INDEX IF NOT EXISTS webhook_deliveries_owner_created_idx ON public.webhoo
 ALTER TABLE public.webhook_deliveries ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Owners read own webhook deliveries" ON public.webhook_deliveries;
 CREATE POLICY "Owners read own webhook deliveries" ON public.webhook_deliveries FOR SELECT TO authenticated USING (owner_id = auth.uid());
+
+DROP POLICY IF EXISTS "Admins read all support tickets" ON public.support_tickets;
+CREATE POLICY "Admins read all support tickets" ON public.support_tickets
+  FOR SELECT TO authenticated USING (public.has_role(auth.uid(), 'admin'::public.app_role));
+DROP POLICY IF EXISTS "Admins update support tickets" ON public.support_tickets;
+CREATE POLICY "Admins update support tickets" ON public.support_tickets
+  FOR UPDATE TO authenticated USING (public.has_role(auth.uid(), 'admin'::public.app_role))
+  WITH CHECK (public.has_role(auth.uid(), 'admin'::public.app_role));
