@@ -27,5 +27,5 @@ export function sendDiscordAlert(url: string | null | undefined, text: string) {
       embeds: [{ description: text.slice(0, 4000), color: 0x292929 }],
       allowed_mentions: { parse: [] },
     }),
-  }).then(() => undefined, () => undefined);
+  }).then((response) => ({ ok: response.ok, status: response.status }), () => ({ ok: false, status: 0 }));
 }
