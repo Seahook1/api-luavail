@@ -86,9 +86,9 @@ function Index() {
     await supabase.auth.signOut();
   };
   return (
-    <div className="min-h-screen bg-[#0e0c13] font-sans text-zinc-100">
+    <div className="min-h-screen bg-[#09090b] font-sans text-zinc-100">
       <Toaster />
-      <header className="flex items-center justify-end border-b border-white/[0.07] bg-[#0e0c13]/90 px-6 py-3">
+      <header className="flex items-center justify-end border-b border-white/[0.06] bg-[#09090b]/90 px-6 py-3">
         <div className="flex items-center gap-2">
           {session && (
             <Button variant="ghost" size="sm" onClick={signOut}>
@@ -199,7 +199,7 @@ function Dashboard() {
     load();
   }, []);
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
+    <div className="mx-auto max-w-7xl px-5 py-7 sm:px-8 sm:py-9">
       {tab === "discord" && <DiscordPanel />}
       {tab === "api" && <ApiPanel />}
       {tab === "scripts" &&
@@ -231,7 +231,7 @@ function Dashboard() {
                 <button
                   key={s.id}
                   onClick={() => setSel(s)}
-                  className={`w-full rounded-md border px-3 py-2 text-left text-sm ${sel?.id === s.id ? "border-primary text-primary" : "border-border"}`}
+                  className={`w-full rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${sel?.id === s.id ? "border-violet-300/20 bg-violet-300/[0.08] text-white" : "border-transparent text-zinc-400 hover:border-white/[0.06] hover:bg-white/[0.035] hover:text-zinc-100"}`}
                 >
                   {s.name}
                   <span className="block text-xs text-muted-foreground">{s.executions} runs</span>
