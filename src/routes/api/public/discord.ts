@@ -59,6 +59,13 @@ export const Route = createFileRoute("/api/public/discord")({
         const guild: string | undefined = i.guild_id;
         const isAdmin = !!i.member && (BigInt(i.member.permissions ?? "0") & 8n) === 8n;
 
+        if (name === "help") {
+          return reply("**API Luavail** — script licensing and delivery\n\nBuyer commands: `/redeem`, `/resethwid`\nSeller commands: `/link`, `/panel`, `/genkey`, `/ban`, `/unban`, `/delkey`, `/stats`, `/maintenance`\nUse `/status` to check service connectivity.");
+        }
+        if (name === "status") {
+          const { error } = await db.from("scripts").select("id").limit(1);
+          return reply(error ? "⚠️ API Luavail database check failed." : "🟢 API Luavail is responding and the database is reachable.");
+        }
         if (name === "redeem") {
           const { data: lic } = await db.from("license_keys").select("banned, expires_at, script_id, hwid, scripts(name)").eq("key", key).maybeSingle();
           if (!lic) return reply("❌ Key not found.");
@@ -98,7 +105,7 @@ export const Route = createFileRoute("/api/public/discord")({
           if (!row) return reply("❌ Invalid link code.");
           await db.from("discord_links").update({ guild_id: null }).eq("guild_id", guild);
           await db.from("discord_links").update({ guild_id: guild }).eq("user_id", row.user_id);
-          return reply("✅ This server is now linked to your Vault account.");
+          return reply("✅ This server is now linked to your API Luavail account.");
         }
 
         const { data: link } = await db.from("discord_links").select("user_id").eq("guild_id", guild).maybeSingle();
@@ -106,6 +113,23 @@ export const Route = createFileRoute("/api/public/discord")({
         const { data: owned } = await db.from("scripts").select("id, name").eq("owner_id", link.user_id);
         const ids = (owned ?? []).map((s) => s.id);
 
+        if (name === "stats") {
+          const { count: scriptCount } = await db.from("scripts").select("id", { count: "exact", head: true }).eq("owner_id", link.user_id);
+          const { count: keyCount } = await db.from("license_keys").select("id", { count: "exact", head: true }).in("script_id", ids);
+          const { count: activeCount } = await db.from("license_keys").select("id", { count: "exact", head: true }).in("script_id", ids).eq("banned", false);
+          const { count: runCount } = await db.from("execution_logs").select("id", { count: "exact", head: true }).in("script_id", ids);
+          return reply("📊 **API Luavail statistics**\nScripts: **" + (scriptCount ?? 0) + "**\nLicense keys: **" + (keyCount ?? 0) + "**\nNot banned: **" + (activeCount ?? 0) + "**\nRecorded runs: **" + (runCount ?? 0) + "**");
+        }
+
+        if (name === "maintenance") {
+          const sname = String(opts["script"] ?? "").trim().toLowerCase();
+          const sc = (owned ?? []).find((s) => s.name.toLowerCase() === sname);
+          if (!sc) return reply("❌ Script not found in your account.");
+          const enabled = opts["enabled"] === true || opts["enabled"] === "true";
+          const { error } = await db.from("scripts").update({ maintenance_mode: enabled }).eq("id", sc.id).eq("owner_id", link.user_id);
+          if (error) return reply("❌ Could not update maintenance mode.");
+          return reply((enabled ? "🛠️ Maintenance enabled" : "✅ Maintenance disabled") + " for **" + sc.name + "**.");
+        }
         if (name === "panel") {
           const sname = String(opts["script"] ?? "").trim().toLowerCase();
           const sc = (owned ?? []).find((s) => s.name.toLowerCase() === sname);
@@ -121,7 +145,7 @@ export const Route = createFileRoute("/api/public/discord")({
                 { name: "🔄 Reset HWID", value: "Move your key to a new device", inline: true },
                 { name: "🔎 Check key", value: "See status and expiry", inline: true },
               ],
-              footer: { text: "Powered by Vault" },
+              footer: { text: "Powered by API Luavail" },
             }],
             components: [{ type: 1, components: [
               btn("Get key", `panel:getkey:${sc.id}`, 1), btn("Redeem key", "panel:redeem", 3),
