@@ -34,9 +34,32 @@ async function handleInit(request: Request): Promise<Response> {
     let executor: string | null = null;
     let robloxUsername: string | null = null;
     let robloxDisplayName: string | null = null;
+    const recordSecurityEvent = async (eventType: string, severity: "info" | "warning" | "critical", message: string, keyId: string | null = null, details: Record<string, unknown> = {}) => {
+      if (!scriptId) return;
+      const { data: owner } = await (db as any).from("scripts").select("owner_id").eq("id", scriptId).maybeSingle();
+      if (!owner?.owner_id) return;
+      await (db as any).from("security_events").insert({
+        owner_id: owner.owner_id, script_id: scriptId, key_id: keyId,
+        event_type: eventType, severity, message: message.slice(0, 240), details,
+      });
+    };
     const failWithAlert = async (message: string) => {
       if (scriptId) {
-        const { data: alertScript } = await (db as any).from("scripts").select("discord_webhook,webhook_failure_enabled").eq("id", scriptId).maybeSingle();
+        const { data: alertScript } = await (db as any).from("scripts").select("discord_webhook,webhook_failure_enabled,owner_id").eq("id", scriptId).maybeSingle();
+        if (alertScript?.owner_id && /license key|invalid license|key is banned|key has expired|rate limit/i.test(message)) {
+          const { count } = await (db as any).from("security_events").select("id", { count: "exact", head: true })
+            .eq("script_id", scriptId).eq("event_type", "failed_key_check")
+            .gte("created_at", new Date(Date.now() - 10 * 60_000).toISOString());
+          const severity = (count ?? 0) >= 4 ? "warning" : "info";
+          await (db as any).from("security_events").insert({
+            owner_id: alertScript.owner_id, script_id: scriptId, event_type: "failed_key_check",
+            severity, message: (count ?? 0) >= 4 ? "Repeated failed license checks detected" : "A license check was rejected",
+            details: { reason: message.slice(0, 120), attemptsInWindow: (count ?? 0) + 1 },
+          });
+          if ((count ?? 0) === 4 && alertScript.discord_webhook && alertScript.webhook_failure_enabled !== false) {
+            void sendDiscordAlert(alertScript.discord_webhook, "⚠️ API Luavail detected 5 failed license checks for one script within 10 minutes.");
+          }
+        }
         if (alertScript?.discord_webhook && alertScript.webhook_failure_enabled !== false) {
           void sendDiscordAlert(alertScript.discord_webhook, "A script execution attempt was rejected: " + message.slice(0, 300));
         }
@@ -76,7 +99,7 @@ async function handleInit(request: Request): Promise<Response> {
 
     const { data: script } = await (db as any)
       .from("scripts")
-      .select("id, enabled, moderation_disabled, keyless, maintenance_mode")
+      .select("id, owner_id, enabled, moderation_disabled, keyless, maintenance_mode")
       .eq("id", scriptId)
       .maybeSingle();
     if (!script) return await failWithAlert("Script not found");
@@ -104,6 +127,18 @@ async function handleInit(request: Request): Promise<Response> {
           return await failWithAlert("HWID does not match this key (rebind cooldown 24h)");
         }
         await db.from("license_keys").update({ hwid, last_rebind_at: new Date().toISOString() }).eq("id", k.id);
+        const { count: recentChanges } = await (db as any).from("security_events").select("id", { count: "exact", head: true })
+          .eq("key_id", k.id).eq("event_type", "device_rebind").gte("created_at", new Date(Date.now() - 30 * 86400_000).toISOString());
+        await (db as any).from("security_events").insert({
+          owner_id: script.owner_id, script_id: scriptId, key_id: k.id, event_type: "device_rebind",
+          severity: (recentChanges ?? 0) >= 1 ? "warning" : "info",
+          message: (recentChanges ?? 0) >= 1 ? "Multiple device changes detected for this license" : "License device changed",
+          details: { changesIn30Days: (recentChanges ?? 0) + 1 },
+        });
+        if ((recentChanges ?? 0) === 1) {
+          const { data: alertConfig } = await (db as any).from("scripts").select("discord_webhook,webhook_failure_enabled").eq("id", scriptId).maybeSingle();
+          if (alertConfig?.discord_webhook && alertConfig.webhook_failure_enabled !== false) void sendDiscordAlert(alertConfig.discord_webhook, "⚠️ API Luavail detected multiple device changes for a license key within 30 days.");
+        }
       }
 
       const { count } = await db
@@ -140,6 +175,24 @@ async function handleInit(request: Request): Promise<Response> {
         hint: insErr.hint,
       });
       return await failWithAlert("Internal error creating token");
+    }
+
+    // Flag unusually high launch volume without recording client/network addresses.
+    const burstSince = new Date(Date.now() - 2 * 60_000).toISOString();
+    const { count: recentLaunches } = await (db as any).from("execution_tokens").select("id", { count: "exact", head: true })
+      .eq("script_id", scriptId).gte("created_at", burstSince);
+    if ((recentLaunches ?? 0) >= 25) {
+      const { count: recentAlerts } = await (db as any).from("security_events").select("id", { count: "exact", head: true })
+        .eq("script_id", scriptId).eq("event_type", "execution_burst").gte("created_at", new Date(Date.now() - 10 * 60_000).toISOString());
+      if (!recentAlerts) {
+        await (db as any).from("security_events").insert({
+          owner_id: script.owner_id, script_id: scriptId, event_type: "execution_burst", severity: "warning",
+          message: "Unusual execution burst detected",
+          details: { launchesInTwoMinutes: recentLaunches },
+        });
+        const { data: alertConfig } = await (db as any).from("scripts").select("discord_webhook,webhook_failure_enabled").eq("id", scriptId).maybeSingle();
+        if (alertConfig?.discord_webhook && alertConfig.webhook_failure_enabled !== false) void sendDiscordAlert(alertConfig.discord_webhook, "⚠️ API Luavail detected an unusual execution burst (25+ launches in 2 minutes).");
+      }
     }
 
     // Opportunistic cleanup of long-dead tokens.
