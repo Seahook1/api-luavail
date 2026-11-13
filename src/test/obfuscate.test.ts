@@ -143,6 +143,24 @@ describe("anti-tamper", () => {
     );
     expect(result.stdout).not.toContain("PAYLOAD_EXECUTED");
   });
+  it("does not warn just because an executor exposes getgenv", () => {
+    const result = execute(
+      obfuscateLua('print("CLEAN_RUN")'),
+      'getgenv=function() return _G end; warn=print',
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("CLEAN_RUN");
+    expect(result.stdout).not.toContain("This script is maintained by api-luavail");
+  });
+  it("reports detected runtime tampering through warn and getgenv", () => {
+    const result = execute(
+      obfuscateLua('print("PAYLOAD_EXECUTED")'),
+      'local original=string.byte; string.byte=function(s,i,j) if s=="A" then return 66 end return original(s,i,j) end; __luavail_env={}; getgenv=function() return __luavail_env end; warn=print',
+    );
+    expect(result.stdout).toContain("This script is maintained by api-luavail.lovable.app");
+    expect(result.stdout).toContain("Luavail.");
+    expect(result.stdout).not.toContain("PAYLOAD_EXECUTED");
+  });
   it("runs through four layers", () => {
     expect(execute(obfuscateLua('print("FOUR_OK")', 4)).stdout.trim()).toBe("FOUR_OK");
   });
