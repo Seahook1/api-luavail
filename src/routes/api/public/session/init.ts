@@ -104,6 +104,8 @@ async function handleInit(request: Request): Promise<Response> {
       .maybeSingle();
     if (!script) return await failWithAlert("Script not found");
     if (!hostingAllowed(script)) return await failWithAlert("Script is disabled or moderated");
+    const { data: platformSettings } = await (db as any).from("platform_settings").select("emergency_lockdown").eq("owner_id", script.owner_id).maybeSingle();
+    if (platformSettings?.emergency_lockdown) return await failWithAlert("Emergency lockdown is active");
     if ((script as typeof script & { maintenance_mode?: boolean }).maintenance_mode) return await failWithAlert("Script is temporarily in maintenance mode");
 
     let keyId: string | null = null;
