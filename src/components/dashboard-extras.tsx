@@ -116,3 +116,39 @@ export function ActivityPanel() {
   useEffect(() => { void load(); }, []);
   return <section className="space-y-4"><div className="flex items-end justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">Security</p><h1 className="mt-1 text-2xl font-semibold text-white">Audit log</h1><p className="mt-1 text-sm text-zinc-500">Recent script and license-key changes.</p></div><Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>Refresh</Button></div><div className="rounded-xl border border-white/[0.07] bg-[#101014] p-3">{events.map((e) => <div key={e.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.05] px-2 py-3 last:border-0"><div><p className="text-sm text-zinc-200"><span className="capitalize">{e.action}</span> {e.entity_type.replaceAll("_"," ")}</p><p className="mt-1 text-[11px] text-zinc-600">{e.entity_id ?? "Record"}</p></div><time className="text-[11px] text-zinc-500">{new Date(e.created_at).toLocaleString()}</time></div>)}{!events.length && <p className="p-4 text-sm text-zinc-500">{loading ? "Loading…" : "No audit events yet."}</p>}</div></section>;
 }
+
+
+type DashboardPrefs = { showStats: boolean; showChart: boolean; showStatus: boolean; range: "7" | "30"; accent: "violet" | "blue" | "green" };
+const PREF_KEY = "vault-dashboard-preferences";
+const defaultPrefs: DashboardPrefs = { showStats: true, showChart: true, showStatus: true, range: "7", accent: "violet" };
+
+export function PreferencesPanel() {
+  const [prefs, setPrefs] = useState<DashboardPrefs>(defaultPrefs);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PREF_KEY);
+      if (saved) setPrefs({ ...defaultPrefs, ...JSON.parse(saved) });
+    } catch { /* keep defaults */ }
+  }, []);
+  const save = (next: DashboardPrefs) => {
+    setPrefs(next);
+    try { localStorage.setItem(PREF_KEY, JSON.stringify(next)); toast.success("Dashboard preferences saved"); }
+    catch { toast.error("Could not save preferences in this browser."); }
+  };
+  return <section className="mx-auto max-w-3xl space-y-5">
+    <div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">Workspace</p><h1 className="mt-1 text-2xl font-semibold text-white">Dashboard preferences</h1><p className="mt-1 text-sm text-zinc-500">Choose which analytics widgets appear and set your default view.</p></div>
+    <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4 space-y-4">
+      <h2 className="text-sm font-semibold text-white">Visible widgets</h2>
+      {([["showStats","Summary cards"],["showChart","Activity chart"],["showStatus","System status"]] as const).map(([key,label]) => <label key={key} className="flex items-center justify-between gap-3 border-b border-white/[0.05] py-2 last:border-0"><span className="text-sm text-zinc-300">{label}</span><input type="checkbox" checked={prefs[key]} onChange={(e) => save({ ...prefs, [key]: e.target.checked })}/></label>)}
+    </div>
+    <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4 space-y-4">
+      <div><h2 className="text-sm font-semibold text-white">Default analytics range</h2><p className="mt-1 text-xs text-zinc-500">You can still change this directly on the Analytics page.</p></div>
+      <select value={prefs.range} onChange={(e) => save({ ...prefs, range: e.target.value as "7" | "30" })} className="rounded-lg border border-white/10 bg-[#111115] px-3 py-2 text-xs text-zinc-200"><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select>
+    </div>
+    <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4 space-y-3">
+      <h2 className="text-sm font-semibold text-white">Chart accent</h2>
+      <div className="flex flex-wrap gap-2">{(["violet","blue","green"] as const).map((accent) => <Button key={accent} size="sm" variant={prefs.accent===accent ? "default" : "outline"} onClick={() => save({ ...prefs, accent })}>{accent[0]!.toUpperCase()+accent.slice(1)}</Button>)}</div>
+      <p className="text-[11px] text-zinc-600">Preferences are stored in this browser and do not affect other dashboard users.</p>
+    </div>
+  </section>;
+}
