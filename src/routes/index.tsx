@@ -25,7 +25,7 @@ export const Route = createFileRoute("/")({
     search: Record<string, unknown>,
   ): { tab: "home" | "scripts" | "discord" | "api" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security" } => ({
     tab: ["discord", "api", "scripts", "insights", "activity", "settings", "sessions", "keys", "security"].includes(String(search["tab"]))
-      ? (search["tab"] as "discord" | "api" | "scripts" | "insights" | "activity" | "settings" | "sessions" | "keys")
+      ? (search["tab"] as "discord" | "api" | "scripts" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security")
       : "home",
   }),
   head: () => ({
