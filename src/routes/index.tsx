@@ -612,6 +612,12 @@ function ScriptPanel({
 }) {
   const [source, setSource] = useState(script.source);
   const [keys, setKeys] = useState<Key[]>([]);
+  const [keyQuery, setKeyQuery] = useState("");
+  const [keyStatus, setKeyStatus] = useState<"all" | "active" | "banned" | "expired">("all");
+  const [versions, setVersions] = useState<any[]>([]);
+  const [maintenance, setMaintenance] = useState(!!script.maintenance_mode);
+  const [successAlerts, setSuccessAlerts] = useState(script.webhook_success_enabled !== false);
+  const [failureAlerts, setFailureAlerts] = useState(script.webhook_failure_enabled !== false);
   const [logs, setLogs] = useState<Log[]>([]);
   const [enabled, setEnabled] = useState(script.enabled);
   const loadLogs = async () => {
@@ -644,6 +650,17 @@ function ScriptPanel({
     }).length;
     return { time: hourStart.toLocaleTimeString([], { hour: "numeric" }), executions: count };
   });
+  const toggleMaintenance = async () => {
+    const next = !maintenance;
+    const { error } = await dashboardDb.from("scripts").update({ maintenance_mode: next }).eq("id", script.id);
+    if (error) { toast.error(error.message); return; }
+    setMaintenance(next); toast.success(next ? "Maintenance mode enabled" : "Maintenance mode disabled"); onChange();
+  };
+  const saveWebhookEvents = async (success: boolean, failure: boolean) => {
+    const { error } = await dashboardDb.from("scripts").update({ webhook_success_enabled: success, webhook_failure_enabled: failure }).eq("id", script.id);
+    if (error) { toast.error(error.message); return; }
+    setSuccessAlerts(success); setFailureAlerts(failure); toast.success("Webhook event preferences saved"); onChange();
+  };
   const toggle = async () => {
     const { error } = await supabase
       .from("scripts")
@@ -713,6 +730,23 @@ function ScriptPanel({
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const loader = `${keyless ? "" : 'script_key = "PUT_KEY_HERE"\n'}loadstring(game:HttpGet("${origin}/api/public/cdn/loader/${script.id}"))()`;
 
+  const loadVersions = async () => {
+    const { data, error } = await dashboardDb.from("script_versions").select("id,source,created_at").eq("script_id", script.id).order("created_at", { ascending: false }).limit(30);
+    if (!error) setVersions(data ?? []);
+  };
+  const filteredKeys = keys.filter((k) => {
+    const q = keyQuery.trim().toLowerCase();
+    const matches = !q || k.key.toLowerCase().includes(q) || (k.note ?? "").toLowerCase().includes(q);
+    const statusMatch = keyStatus === "all" || (keyStatus === "banned" && k.banned) || (keyStatus === "expired" && !k.banned && !!k.expires_at && new Date(k.expires_at) < new Date()) || (keyStatus === "active" && !k.banned && (!k.expires_at || new Date(k.expires_at) >= new Date()));
+    return matches && statusMatch;
+  });
+  const bulkRevoke = async () => {
+    if (!filteredKeys.length || !confirm("Ban " + filteredKeys.length + " matching keys?")) return;
+    const ids = filteredKeys.filter((k) => !k.banned).map((k) => k.id);
+    if (!ids.length) return;
+    const { error } = await supabase.from("license_keys").update({ banned: true }).in("id", ids);
+    if (error) toast.error(error.message); else { toast.success("Banned " + ids.length + " keys"); void loadKeys(); }
+  };
   const loadKeys = async () => {
     const { data } = await supabase
       .from("license_keys")
