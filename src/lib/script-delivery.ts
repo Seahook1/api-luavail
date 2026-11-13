@@ -43,10 +43,12 @@ export async function servePayload(request: Request) {
 
     const { data: script } = await (db as any)
       .from("scripts")
-      .select("id, name, source, enabled, moderation_disabled, executions, maintenance_mode, discord_webhook, webhook_success_enabled")
+      .select("id, owner_id, name, source, enabled, moderation_disabled, executions, maintenance_mode, discord_webhook, webhook_success_enabled, vm_enabled, vm_passes")
       .eq("id", row.script_id)
       .maybeSingle();
     if (!script || !hostingAllowed(script)) return fail("Script is disabled or moderated");
+    const { data: platformSettings } = await db.from("platform_settings").select("emergency_lockdown").eq("owner_id", script.owner_id).maybeSingle();
+    if (platformSettings?.emergency_lockdown) return fail("Emergency lockdown is active");
     if ((script as typeof script & { maintenance_mode?: boolean }).maintenance_mode) return fail("Script is temporarily in maintenance mode");
     if (!script.source) return fail("No payload available");
 
@@ -69,7 +71,7 @@ export async function servePayload(request: Request) {
     // Every delivery is freshly obfuscated with new keys/names, so no two payloads match.
     return Response.json(
       {
-        payload: obfuscateLua(script.source, { passes: 2, mode: "wrap", antiTamper: false, flatten: false, vm: true }),
+        payload: obfuscateLua(script.source, { passes: Math.min(3, Math.max(1, Number(script.vm_passes) || 2)), mode: "wrap", antiTamper: false, flatten: false, vm: script.vm_enabled !== false }),
         heartbeat_token: heartbeat,
         interval: INTERVAL_SECONDS,
       },
