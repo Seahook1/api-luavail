@@ -222,21 +222,28 @@ function Dashboard() {
             }}
           />
         ) : (
-          <main className="grid gap-6 md:grid-cols-[240px_1fr]">
-            <aside className="space-y-2">
-              <Button className="w-full" onClick={() => setCreating(true)}>
+          <main className="grid min-w-0 gap-5 lg:grid-cols-[230px_minmax(0,1fr)]">
+            <aside className="h-fit space-y-3 rounded-xl border border-white/[0.07] bg-[#101014] p-3 lg:sticky lg:top-6">
+              <div className="flex items-center justify-between px-1 pb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Your scripts</span>
+                <span className="text-[10px] tabular-nums text-zinc-600">{scripts.length}</span>
+              </div>
+              <Button className="w-full bg-violet-300 text-black hover:bg-violet-200" onClick={() => setCreating(true)}>
                 + New script
               </Button>
-              {scripts.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => setSel(s)}
-                  className={`w-full rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${sel?.id === s.id ? "border-violet-300/20 bg-violet-300/[0.08] text-white" : "border-transparent text-zinc-400 hover:border-white/[0.06] hover:bg-white/[0.035] hover:text-zinc-100"}`}
-                >
-                  {s.name}
-                  <span className="block text-xs text-muted-foreground">{s.executions} runs</span>
-                </button>
-              ))}
+              <div className="space-y-1">
+                {scripts.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setSel(s)}
+                    className={`w-full rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${sel?.id === s.id ? "border-violet-300/20 bg-violet-300/[0.08] text-white" : "border-transparent text-zinc-400 hover:border-white/[0.06] hover:bg-white/[0.035] hover:text-zinc-100"}`}
+                  >
+                    {s.name}
+                    <span className="block text-xs text-zinc-600">{s.executions} runs</span>
+                  </button>
+                ))}
+                {scripts.length === 0 && <p className="px-2 py-3 text-xs text-zinc-600">No scripts yet.</p>}
+              </div>
             </aside>
             {sel ? (
               <ScriptPanel
