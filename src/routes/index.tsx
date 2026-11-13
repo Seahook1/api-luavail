@@ -640,7 +640,7 @@ function ScriptPanel({
   const [keyStatus, setKeyStatus] = useState<"all" | "active" | "banned" | "expired">("all");
   const [versions, setVersions] = useState<any[]>([]);
   const [compareVersion, setCompareVersion] = useState<any | null>(null);
-  const comparisonLines = compareVersion ? Array.from({ length: Math.min(250, Math.max(compareVersion.source.split("\\n").length, source.split("\\n").length)) }, (_, index) => ({ oldLine: compareVersion.source.split("\\n")[index], newLine: source.split("\\n")[index], index })).filter((line) => line.oldLine !== line.newLine) : [];
+  const comparisonLines = compareVersion ? Array.from({ length: Math.min(250, Math.max(compareVersion.source.split("\n").length, source.split("\n").length)) }, (_, index) => ({ oldLine: compareVersion.source.split("\n")[index], newLine: source.split("\n")[index], index })).filter((line) => line.oldLine !== line.newLine) : [];
   const [maintenance, setMaintenance] = useState(!!script.maintenance_mode);
   const [vmEnabled, setVmEnabled] = useState(script.vm_enabled !== false);
   const [vmPasses, setVmPasses] = useState(String(script.vm_passes ?? 2));
