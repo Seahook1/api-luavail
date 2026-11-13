@@ -16,7 +16,7 @@ import { lovable } from "@/integrations/lovable";
 import { HomePanel } from "@/components/home-panel";
 import { LuaFilePicker } from "@/components/lua-file-picker";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { InsightsPanel, ActivityPanel } from "@/components/dashboard-extras";
+import { InsightsPanel, ActivityPanel, PreferencesPanel } from "@/components/dashboard-extras";
 
 export const Route = createFileRoute("/")({
   validateSearch: (
@@ -202,7 +202,7 @@ function Dashboard() {
   return (
     <div className="mx-auto max-w-7xl px-5 py-7 sm:px-8 sm:py-9">
       {tab === "discord" && <DiscordPanel />}
-      {tab === "api" && <ApiPanel />}\n      {tab === "insights" && <InsightsPanel />}\n      {tab === "activity" && <ActivityPanel />}
+      {tab === "api" && <ApiPanel />}\n      {tab === "insights" && <InsightsPanel />}\n      {tab === "activity" && <ActivityPanel />}\n      {tab === "settings" && <PreferencesPanel />}
       {tab === "scripts" &&
         (setupFor ? (
           <KeySystemSetup
