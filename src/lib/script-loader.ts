@@ -142,7 +142,7 @@ export function serveLoader(request: Request, scriptId: string) {
     });
   }
 
-  return new Response(obfuscateLua(buildLoaderLua(scriptId, origin), 3), {
+  return new Response(buildLoaderLua(scriptId, origin), {
     status: 200,
     headers: { ...DELIVERY_HEADERS, "Content-Type": "text/plain; charset=utf-8" },
   });
