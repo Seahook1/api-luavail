@@ -30,12 +30,12 @@ export const Route = createFileRoute("/")({
   }),
   head: () => ({
     meta: [
-      { title: "Vault — Roblox Script Protection & Key System" },
+      { title: "API Luavail — Roblox Script Protection & Key System" },
       {
         name: "description",
         content: "Host Roblox scripts behind license keys with HWID locking, expiry and bans.",
       },
-      { property: "og:title", content: "Vault — Roblox Script Protection" },
+      { property: "og:title", content: "API Luavail — Roblox Script Protection" },
       {
         property: "og:description",
         content: "License keys, HWID lock and protected script delivery.",
@@ -142,8 +142,8 @@ function Auth() {
     <main className="mx-auto flex min-h-[75vh] max-w-md items-center px-6 py-14">
       <div className="w-full rounded-2xl border border-white/[0.1] bg-[#0b0b0b] p-7 shadow-[0_24px_90px_rgba(0,0,0,0.25)] sm:p-9">
         <div className="mb-7">
-          <div className="mb-5 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-violet-400/25 bg-violet-500/10 text-lg font-bold text-zinc-400">V</div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-400">Vault access</p>
+          <img src="/logo.svg" alt="API Luavail" className="mb-5 h-12 w-12 rounded-xl object-contain" />
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-400">API Luavail access</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Protect your scripts.</h1>
           <p className="mt-2 text-sm leading-6 text-slate-400">
             License keys, device locking and protected script delivery in one place.
