@@ -55,3 +55,7 @@ DROP POLICY IF EXISTS "Admins update support tickets" ON public.support_tickets;
 CREATE POLICY "Admins update support tickets" ON public.support_tickets
   FOR UPDATE TO authenticated USING (public.has_role(auth.uid(), 'admin'::public.app_role))
   WITH CHECK (public.has_role(auth.uid(), 'admin'::public.app_role));
+
+DROP POLICY IF EXISTS "Owners record own webhook deliveries" ON public.webhook_deliveries;
+CREATE POLICY "Owners record own webhook deliveries" ON public.webhook_deliveries
+  FOR INSERT TO authenticated WITH CHECK (owner_id = auth.uid());
