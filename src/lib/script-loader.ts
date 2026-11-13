@@ -147,7 +147,7 @@ export function serveLoader(request: Request, scriptId: string) {
   const protectedLoader = obfuscateLua(buildLoaderLua(scriptId, origin), {
     passes: 1,
     mode: "wrap",
-    antiTamper: false,
+    antiTamper: true,
     flatten: false,
     vm: false,
   });
