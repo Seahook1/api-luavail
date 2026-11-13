@@ -194,7 +194,7 @@ function Dashboard() {
   const [creating, setCreating] = useState(false);
   const [setupFor, setSetupFor] = useState<Script | null>(null);
   const load = async () => {
-    const { data } = await supabase.from("scripts").select(COLS).order("created_at");
+    const { data } = await (supabase as any).from("scripts").select(COLS).order("created_at");
     setScripts(data ?? []);
     return data ?? [];
   };
@@ -625,6 +625,7 @@ function ScriptPanel({
   const [failureAlerts, setFailureAlerts] = useState(script.webhook_failure_enabled !== false);
   const [logs, setLogs] = useState<Log[]>([]);
   const [logQuery, setLogQuery] = useState("");
+  const [logRange, setLogRange] = useState<"all" | "1" | "7">("all");
   const [enabled, setEnabled] = useState(script.enabled);
   const loadLogs = async () => {
     const { data } = await supabase
@@ -645,7 +646,9 @@ function ScriptPanel({
     .slice(0, 5);
   const filteredLogs = logs.filter((log) => {
     const q = logQuery.trim().toLowerCase();
-    return !q || [log.executor, log.roblox_username, log.roblox_display_name, log.key_note].some((value) => value?.toLowerCase().includes(q));
+    const age = Date.now() - new Date(log.created_at).getTime();
+    const inRange = logRange === "all" || age <= Number(logRange) * 86400000;
+    return inRange && (!q || [log.executor, log.roblox_username, log.roblox_display_name, log.key_note].some((value) => value?.toLowerCase().includes(q)));
   });
   const totalLoggedRuns = logs.length;
   const chartNow = Date.now();
