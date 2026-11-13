@@ -9,6 +9,9 @@ const db = supabase as any;
 
 export function InsightsPanel() {
   const [range, setRange] = useState<Range>("7");
+  const [prefs, setPrefs] = useState<DashboardPrefs>(defaultPrefs);
+  useEffect(() => { try { const saved = localStorage.getItem(PREF_KEY); if (saved) { const next = { ...defaultPrefs, ...JSON.parse(saved) }; setPrefs(next); setRange(next.range); } } catch { /* use defaults */ } }, []);
+  const accentColor = prefs.accent === "blue" ? "#67e8f9" : prefs.accent === "green" ? "#6ee7b7" : "#a78bfa";
   const [scripts, setScripts] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [usage, setUsage] = useState<any[]>([]);
@@ -68,10 +71,10 @@ export function InsightsPanel() {
           <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>Refresh</Button>
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {prefs.showStats && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map(([label, value]) => <div key={label} className="rounded-xl border border-white/[0.07] bg-[#101014] p-4"><p className="text-xs text-zinc-500">{label}</p><p className="mt-2 text-2xl font-semibold tabular-nums text-white">{value}</p></div>)}
-      </div>
-      <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4 sm:p-5">
+      </div>}
+      {prefs.showChart && <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4 sm:p-5">
         <div className="mb-4"><h2 className="text-sm font-semibold text-white">Activity overview</h2><p className="mt-1 text-xs text-zinc-500">Daily executions and authenticated API requests</p></div>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
@@ -81,22 +84,22 @@ export function InsightsPanel() {
               <XAxis dataKey="day" tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false}/>
               <YAxis allowDecimals={false} tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false}/>
               <Tooltip contentStyle={{ background: "#17171c", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#fff", fontSize: 12 }}/>
-              <Area type="monotone" dataKey="executions" name="Executions" stroke="#a78bfa" fill="url(#globalExecFill)" strokeWidth={2}/>
+              <Area type="monotone" dataKey="executions" name="Executions" stroke={accentColor} fill="url(#globalExecFill)" strokeWidth={2}/>
               <Area type="monotone" dataKey="api" name="API requests" stroke="#67e8f9" fill="transparent" strokeWidth={1.5}/>
             </AreaChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </div>}
       <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
         <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4">
           <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-semibold text-white">Script status</h2><span className="text-xs text-zinc-500">{scripts.length} total</span></div>
           <div className="space-y-2">{scripts.map((s) => <div key={s.id} className="flex items-center justify-between gap-3 border-b border-white/[0.05] py-2 last:border-0"><span className="truncate text-sm text-zinc-300">{s.name}</span><span className={`shrink-0 text-[10px] ${s.maintenance_mode ? "text-amber-300" : s.enabled ? "text-emerald-300" : "text-zinc-500"}`}>{s.maintenance_mode ? "Maintenance" : s.enabled ? "Enabled" : "Disabled"}</span></div>)}{scripts.length===0 && <p className="text-xs text-zinc-500">No scripts found.</p>}</div>
         </div>
-        <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4">
+        {prefs.showStatus && <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4">
           <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-semibold text-white">System status</h2><span className={`rounded-full px-2 py-1 text-[10px] ${status==="online" ? "bg-emerald-400/10 text-emerald-300" : status==="error" ? "bg-rose-400/10 text-rose-300" : "bg-white/5 text-zinc-400"}`}>{status==="online" ? "CONNECTED" : status==="error" ? "CHECK FAILED" : "CHECKING"}</span></div>
           <p className="text-sm text-zinc-400">Dashboard database connectivity</p><p className="mt-1 text-xs text-zinc-600">This checks the dashboard's Supabase queries, not third-party hosting or global uptime.</p>
           <Button size="sm" variant="outline" className="mt-4" onClick={() => void load()} disabled={loading}>Run check</Button>
-        </div>
+        </div>}
       </div>
       <p className="text-[11px] text-zinc-600">API usage counts authenticated API-key requests. Execution totals are based on recorded delivery events. No IP or address data is collected by these analytics.</p>
     </section>
