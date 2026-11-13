@@ -19,13 +19,14 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { InsightsPanel, ActivityPanel, PreferencesPanel, SecurityAlertsPanel } from "@/components/dashboard-extras";
 import { SessionsPanel } from "@/components/sessions-panel";
 import { KeyCenterPanel } from "@/components/key-center-panel";
+import { PlatformToolsPanel } from "@/components/platform-tools-panel";
 
 export const Route = createFileRoute("/")({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { tab: "home" | "scripts" | "discord" | "api" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security" } => ({
-    tab: ["discord", "api", "scripts", "insights", "activity", "settings", "sessions", "keys", "security"].includes(String(search["tab"]))
-      ? (search["tab"] as "discord" | "api" | "scripts" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security")
+  ): { tab: "home" | "scripts" | "discord" | "api" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security" | "tools" } => ({
+    tab: ["discord", "api", "scripts", "insights", "activity", "settings", "sessions", "keys", "security", "tools"].includes(String(search["tab"]))
+      ? (search["tab"] as "discord" | "api" | "scripts" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security" | "tools")
       : "home",
   }),
   head: () => ({
@@ -61,6 +62,8 @@ type Script = {
   maintenance_mode?: boolean;
   webhook_success_enabled?: boolean;
   webhook_failure_enabled?: boolean;
+  vm_enabled?: boolean;
+  vm_passes?: number;
 };
 type Log = {
   id: string;
@@ -212,6 +215,7 @@ function Dashboard() {
       {tab === "settings" && <PreferencesPanel />}
       {tab === "sessions" && <SessionsPanel />}
       {tab === "security" && <SecurityAlertsPanel />}
+      {tab === "tools" && <PlatformToolsPanel />}
       {tab === "keys" && <KeyCenterPanel />}
       {tab === "scripts" &&
         (setupFor ? (
@@ -276,7 +280,7 @@ function Dashboard() {
 }
 
 const COLS =
-  "id,name,source,executions,enabled,keyless,getkey_enabled,checkpoints,getkey_hours,discord_webhook,maintenance_mode,webhook_success_enabled,webhook_failure_enabled";
+  "id,name,source,executions,enabled,keyless,getkey_enabled,checkpoints,getkey_hours,discord_webhook,maintenance_mode,webhook_success_enabled,webhook_failure_enabled,vm_enabled,vm_passes";
 
 function NewScriptForm({
   onCancel,
@@ -636,6 +640,8 @@ function ScriptPanel({
   const [keyStatus, setKeyStatus] = useState<"all" | "active" | "banned" | "expired">("all");
   const [versions, setVersions] = useState<any[]>([]);
   const [maintenance, setMaintenance] = useState(!!script.maintenance_mode);
+  const [vmEnabled, setVmEnabled] = useState(script.vm_enabled !== false);
+  const [vmPasses, setVmPasses] = useState(String(script.vm_passes ?? 2));
   const [successAlerts, setSuccessAlerts] = useState(script.webhook_success_enabled !== false);
   const [failureAlerts, setFailureAlerts] = useState(script.webhook_failure_enabled !== false);
   const [logs, setLogs] = useState<Log[]>([]);
@@ -678,6 +684,12 @@ function ScriptPanel({
     }).length;
     return { time: hourStart.toLocaleTimeString([], { hour: "numeric" }), executions: count };
   });
+  const saveVmSettings = async () => {
+    const passes = Math.min(3, Math.max(1, Number(vmPasses) || 2));
+    const { error } = await (supabase as any).from("scripts").update({ vm_enabled: vmEnabled, vm_passes: passes }).eq("id", script.id);
+    if (error) toast.error(error.message);
+    else { setVmPasses(String(passes)); toast.success("VM protection settings saved"); onChange(); }
+  };
   const toggleMaintenance = async () => {
     const next = !maintenance;
     const { error } = await dashboardDb.from("scripts").update({ maintenance_mode: next }).eq("id", script.id);
@@ -873,6 +885,11 @@ function ScriptPanel({
             Delete
           </Button>
         </div>
+      </div>
+      <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4 space-y-3">
+        <div><h3 className="text-sm font-semibold text-white">VM protection</h3><p className="mt-1 text-xs text-zinc-500">Configure virtualization per script. Some Lua patterns may not compile in VM mode.</p></div>
+        <label className="flex items-center justify-between gap-3 text-sm text-zinc-300"><span>Heavy VM enabled</span><input type="checkbox" checked={vmEnabled} onChange={(event) => setVmEnabled(event.target.checked)} /></label>
+        <div className="flex flex-wrap items-center gap-3"><label className="text-xs text-zinc-400" htmlFor="vm-passes">VM passes</label><select id="vm-passes" value={vmPasses} onChange={(event) => setVmPasses(event.target.value)} className="rounded-md border border-white/10 bg-[#111115] px-3 py-2 text-xs text-zinc-200"><option value="1">1 · Faster</option><option value="2">2 · Balanced</option><option value="3">3 · Stronger / slower</option></select><Button size="sm" onClick={() => void saveVmSettings()}>Save VM settings</Button></div>
       </div>
       <div>
         <label className="text-sm text-muted-foreground">Loader (give this to buyers)</label>
