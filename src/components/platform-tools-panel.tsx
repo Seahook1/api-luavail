@@ -88,7 +88,7 @@ export function PlatformToolsPanel() {
         ...(method === "POST" ? { body: JSON.stringify({ name: "API Playground Test", source: 'print("Hello from API Luavail")', keyless: true }) } : {}),
       });
       const body = await response.text();
-      setApiResult("HTTP " + response.status + "\\n" + body.slice(0, 12000));
+      setApiResult("HTTP " + response.status + "\n" + body.slice(0, 12000));
     } catch (error) {
       setApiResult(String(error));
     } finally { setBusy(false); }
