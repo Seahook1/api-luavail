@@ -123,9 +123,26 @@ export function serveLoader(request: Request, scriptId: string) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(scriptId)) {
     return new Response("--ERR:Script not found", { status: 200, headers: DELIVERY_HEADERS });
   }
-  const origin = new URL(request.url).origin;
+  const url = new URL(request.url);
+  const origin = url.origin;
   if (isBrowserNavigation(request)) return browserBlockedPage(loaderUrl(origin, scriptId));
-  return new Response(obfuscateLua(buildLoaderLua(scriptId, origin), 2), {
+
+  // Add four same-origin redirect hops before serving the loader.
+  const rawHop = url.searchParams.get("hop");
+  const hop = rawHop === null ? 4 : Number.parseInt(rawHop, 10);
+  if (!Number.isInteger(hop) || hop < 0 || hop > 4) {
+    return new Response("--ERR:Invalid loader link", { status: 200, headers: DELIVERY_HEADERS });
+  }
+  if (hop > 0) {
+    const next = new URL(url);
+    next.searchParams.set("hop", String(hop - 1));
+    return new Response(null, {
+      status: 302,
+      headers: { ...DELIVERY_HEADERS, Location: next.toString() },
+    });
+  }
+
+  return new Response(obfuscateLua(buildLoaderLua(scriptId, origin), 3), {
     status: 200,
     headers: { ...DELIVERY_HEADERS, "Content-Type": "text/plain; charset=utf-8" },
   });
