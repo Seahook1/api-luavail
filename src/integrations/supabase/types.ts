@@ -86,28 +86,37 @@ export type Database = {
       execution_logs: {
         Row: {
           created_at: string
+          executor: string | null
           id: string
           ip: string | null
           key_id: string | null
           key_note: string | null
+          roblox_display_name: string | null
+          roblox_username: string | null
           result: string
           script_id: string
         }
         Insert: {
           created_at?: string
+          executor?: string | null
           id?: string
           ip?: string | null
           key_id?: string | null
           key_note?: string | null
+          roblox_display_name?: string | null
+          roblox_username?: string | null
           result: string
           script_id: string
         }
         Update: {
           created_at?: string
+          executor?: string | null
           id?: string
           ip?: string | null
           key_id?: string | null
           key_note?: string | null
+          roblox_display_name?: string | null
+          roblox_username?: string | null
           result?: string
           script_id?: string
         }
@@ -126,6 +135,7 @@ export type Database = {
           canary: string | null
           consumed: boolean
           created_at: string
+          executor: string | null
           expires_at: string
           heartbeat_token: string | null
           hwid: string
@@ -133,6 +143,8 @@ export type Database = {
           ip: string | null
           key_id: string | null
           last_heartbeat_at: string | null
+          roblox_display_name: string | null
+          roblox_username: string | null
           revoked: boolean
           script_id: string
           session_expires_at: string | null
@@ -142,6 +154,7 @@ export type Database = {
           canary?: string | null
           consumed?: boolean
           created_at?: string
+          executor?: string | null
           expires_at: string
           heartbeat_token?: string | null
           hwid: string
@@ -149,6 +162,8 @@ export type Database = {
           ip?: string | null
           key_id?: string | null
           last_heartbeat_at?: string | null
+          roblox_display_name?: string | null
+          roblox_username?: string | null
           revoked?: boolean
           script_id: string
           session_expires_at?: string | null
@@ -158,6 +173,7 @@ export type Database = {
           canary?: string | null
           consumed?: boolean
           created_at?: string
+          executor?: string | null
           expires_at?: string
           heartbeat_token?: string | null
           hwid?: string
@@ -165,6 +181,8 @@ export type Database = {
           ip?: string | null
           key_id?: string | null
           last_heartbeat_at?: string | null
+          roblox_display_name?: string | null
+          roblox_username?: string | null
           revoked?: boolean
           script_id?: string
           session_expires_at?: string | null
@@ -292,10 +310,13 @@ export type Database = {
           getkey_hours: number
           id: string
           keyless: boolean
+          maintenance_mode: boolean
           moderation_disabled: boolean
           name: string
           owner_id: string
           source: string
+          webhook_failure_enabled: boolean
+          webhook_success_enabled: boolean
         }
         Insert: {
           checkpoints?: string[]
@@ -307,10 +328,13 @@ export type Database = {
           getkey_hours?: number
           id?: string
           keyless?: boolean
+          maintenance_mode?: boolean
           moderation_disabled?: boolean
           name: string
           owner_id?: string
           source?: string
+          webhook_failure_enabled?: boolean
+          webhook_success_enabled?: boolean
         }
         Update: {
           checkpoints?: string[]
@@ -322,11 +346,32 @@ export type Database = {
           getkey_hours?: number
           id?: string
           keyless?: boolean
+          maintenance_mode?: boolean
           moderation_disabled?: boolean
           name?: string
           owner_id?: string
           source?: string
+          webhook_failure_enabled?: boolean
+          webhook_success_enabled?: boolean
         }
+        Relationships: []
+      }
+      api_usage_events: {
+        Row: { api_key_id: string | null; created_at: string; id: string; method: string; owner_id: string; path: string }
+        Insert: { api_key_id?: string | null; created_at?: string; id?: string; method: string; owner_id: string; path: string }
+        Update: { api_key_id?: string | null; created_at?: string; id?: string; method?: string; owner_id?: string; path?: string }
+        Relationships: []
+      }
+      audit_events: {
+        Row: { action: string; created_at: string; details: Json; entity_id: string | null; entity_type: string; id: string; owner_id: string }
+        Insert: { action: string; created_at?: string; details?: Json; entity_id?: string | null; entity_type: string; id?: string; owner_id: string }
+        Update: { action?: string; created_at?: string; details?: Json; entity_id?: string | null; entity_type?: string; id?: string; owner_id?: string }
+        Relationships: []
+      }
+      script_versions: {
+        Row: { created_at: string; id: string; owner_id: string; script_id: string; source: string }
+        Insert: { created_at?: string; id?: string; owner_id: string; script_id: string; source: string }
+        Update: { created_at?: string; id?: string; owner_id?: string; script_id?: string; source?: string }
         Relationships: []
       }
       user_roles: {
