@@ -52,7 +52,7 @@ export function HomePanel({ signedIn }: { signedIn: boolean }) {
   return (
     <div>
       <section className="border-b border-white/[0.08] py-16 text-left sm:py-24">
-        <p className="text-[10px] uppercase tracking-[0.28em] text-zinc-500">Roblox script protection · Vault</p>
+        <p className="text-[10px] uppercase tracking-[0.28em] text-zinc-500">Roblox script protection · API Luavail</p>
         <div className="overflow-hidden">
           <h1 className="vault-hero-reveal mt-6 max-w-4xl text-5xl font-semibold leading-[0.98] tracking-[-0.055em] text-white sm:text-7xl lg:text-8xl">
             Host your script. Sell or gate it. Keep your source safe.
