@@ -9,5 +9,5 @@ export const DELIVERY_HEADERS = {
 };
 
 export function loaderUrl(origin: string, scriptId: string) {
-  return `${origin}${CDN_LOADER_PATH}${scriptId}`;
+  return `${origin}${CDN_LOADER_PATH}${scriptId}?hop=4`;
 }
