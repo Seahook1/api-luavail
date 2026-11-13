@@ -623,7 +623,8 @@ function ScriptPanel({
   const [maintenance, setMaintenance] = useState(!!script.maintenance_mode);
   const [successAlerts, setSuccessAlerts] = useState(script.webhook_success_enabled !== false);
   const [failureAlerts, setFailureAlerts] = useState(script.webhook_failure_enabled !== false);
-  const [logs, setLogs] = useState<Log[]>([]);\n  const [logQuery, setLogQuery] = useState("");
+  const [logs, setLogs] = useState<Log[]>([]);
+  const [logQuery, setLogQuery] = useState("");
   const [enabled, setEnabled] = useState(script.enabled);
   const loadLogs = async () => {
     const { data } = await supabase
@@ -642,7 +643,11 @@ function ScriptPanel({
   const topExecutors = Object.entries(executorSummary)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
-  const filteredLogs = logs.filter((log) => {\n    const q = logQuery.trim().toLowerCase();\n    return !q || [log.executor, log.roblox_username, log.roblox_display_name, log.key_note].some((value) => value?.toLowerCase().includes(q));\n  });\n  const totalLoggedRuns = logs.length;
+  const filteredLogs = logs.filter((log) => {
+    const q = logQuery.trim().toLowerCase();
+    return !q || [log.executor, log.roblox_username, log.roblox_display_name, log.key_note].some((value) => value?.toLowerCase().includes(q));
+  });
+  const totalLoggedRuns = logs.length;
   const chartNow = Date.now();
   const executionChart = Array.from({ length: 12 }, (_, index) => {
     const hourStart = new Date(chartNow);
