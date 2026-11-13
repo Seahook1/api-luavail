@@ -1,7 +1,7 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { LayoutDashboard, Code2, Bot, KeyRound, UserRound, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Code2, Bot, KeyRound, UserRound, ShieldCheck, ChartNoAxesCombined, ScrollText } from "lucide-react";
 import { useAppSession } from "@/components/session-provider";
 import { getAdminAccess } from "@/lib/admin.functions";
 import { canShowAdminTab } from "@/lib/admin-navigation";
@@ -10,7 +10,7 @@ const TABS = [
   { id: "home", label: "Overview", group: "Workspace", icon: LayoutDashboard },
   { id: "scripts", label: "Scripts", group: "Workspace", icon: Code2 },
   { id: "discord", label: "Discord bot", group: "Integrations", icon: Bot },
-  { id: "api", label: "API keys", group: "Integrations", icon: KeyRound },
+  { id: "api", label: "API keys", group: "Integrations", icon: KeyRound },\n  { id: "insights", label: "Analytics", group: "Insights", icon: ChartNoAxesCombined },\n  { id: "activity", label: "Audit log", group: "Insights", icon: ScrollText },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -75,7 +75,7 @@ export function AppTabs() {
         </Link>
         <nav aria-label="Main navigation" className="flex-1">
           {navGroup("Workspace", TABS.filter((tab) => tab.group === "Workspace"))}
-          {navGroup("Integrations", TABS.filter((tab) => tab.group === "Integrations"))}
+          {navGroup("Integrations", TABS.filter((tab) => tab.group === "Integrations"))}\n          {navGroup("Insights", TABS.filter((tab) => tab.group === "Insights"))}
           <div className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-700">Account</div>
           <div className="space-y-1">
             <Link to="/redeem" aria-current={active === "buyer" ? "page" : undefined} className={linkClass(active === "buyer")}>
