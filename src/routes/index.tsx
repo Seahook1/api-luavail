@@ -16,15 +16,15 @@ import { lovable } from "@/integrations/lovable";
 import { HomePanel } from "@/components/home-panel";
 import { LuaFilePicker } from "@/components/lua-file-picker";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { InsightsPanel, ActivityPanel, PreferencesPanel } from "@/components/dashboard-extras";
+import { InsightsPanel, ActivityPanel, PreferencesPanel, SecurityAlertsPanel } from "@/components/dashboard-extras";
 import { SessionsPanel } from "@/components/sessions-panel";
 import { KeyCenterPanel } from "@/components/key-center-panel";
 
 export const Route = createFileRoute("/")({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { tab: "home" | "scripts" | "discord" | "api" | "insights" | "activity" | "settings" | "sessions" | "keys" } => ({
-    tab: ["discord", "api", "scripts", "insights", "activity", "settings", "sessions", "keys"].includes(String(search["tab"]))
+  ): { tab: "home" | "scripts" | "discord" | "api" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security" } => ({
+    tab: ["discord", "api", "scripts", "insights", "activity", "settings", "sessions", "keys", "security"].includes(String(search["tab"]))
       ? (search["tab"] as "discord" | "api" | "scripts" | "insights" | "activity" | "settings" | "sessions" | "keys")
       : "home",
   }),
@@ -211,6 +211,7 @@ function Dashboard() {
       {tab === "activity" && <ActivityPanel />}
       {tab === "settings" && <PreferencesPanel />}
       {tab === "sessions" && <SessionsPanel />}
+      {tab === "security" && <SecurityAlertsPanel />}
       {tab === "keys" && <KeyCenterPanel />}
       {tab === "scripts" &&
         (setupFor ? (
