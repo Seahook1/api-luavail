@@ -131,7 +131,16 @@ async function handleInit(request: Request): Promise<Response> {
       canary,
       expires_at: new Date(Date.now() + 30_000).toISOString(),
     });
-    if (insErr) return await failWithAlert("Internal error creating token");
+    if (insErr) {
+      // Keep the client response generic, but retain the database diagnostic for server logs.
+      console.error("execution token insert failed:", {
+        code: insErr.code,
+        message: insErr.message,
+        details: insErr.details,
+        hint: insErr.hint,
+      });
+      return await failWithAlert("Internal error creating token");
+    }
 
     // Opportunistic cleanup of long-dead tokens.
     void db.from("execution_tokens").delete().lt("created_at", new Date(Date.now() - 24 * 3600_000).toISOString());
