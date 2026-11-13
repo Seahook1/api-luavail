@@ -332,6 +332,7 @@ const genJunkTable = (name: string, size: number): string => {
 export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
   const preamble = opts.preamble ?? false;
   const saltName = opts.saltName ?? "__tamperState";
+  const emitWarning = opts.warn ?? true;
 
   const usedP = new Set<number>();
   const nextP = (): number => {
@@ -533,8 +534,8 @@ if __result ~= 0 then
       __pc(function() __gv[${wkey}] = ${wmsg} end)
     end
   end
-  local __wn = __rg(__env, ${d("warn")}) or __rg(__G, ${d("warn")})
-  if __ty(__wn) == "function" then __pc(__wn, ${wmsg}) end
+  ${emitWarning ? `local __wn = __rg(__env, ${d("warn")}) or __rg(__G, ${d("warn")})
+  if __ty(__wn) == "function" then __pc(__wn, ${wmsg}) end` : ""}
 end
 return __result
 `.trim();
