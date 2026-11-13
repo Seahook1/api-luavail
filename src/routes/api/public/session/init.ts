@@ -41,7 +41,7 @@ async function handleInit(request: Request): Promise<Response> {
           void sendDiscordAlert(alertScript.discord_webhook, "A script execution attempt was rejected: " + message.slice(0, 300));
         }
       }
-      return await failWithAlert(message);
+      return fail(message);
     };
     if (request.method === "GET") {
       const u = new URL(request.url);
@@ -139,7 +139,7 @@ async function handleInit(request: Request): Promise<Response> {
     return Response.json({ token, canary }, { status: 200 });
   } catch (e) {
     console.error("session/init fatal:", e);
-    return await failWithAlert("Internal server error");
+    return fail("Internal server error");
   }
 }
 
