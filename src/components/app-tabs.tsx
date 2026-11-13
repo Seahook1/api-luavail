@@ -73,12 +73,12 @@ export function AppTabs() {
 
   return (
     <>
-      <aside className="fixed inset-y-0 left-0 z-50 hidden w-[216px] flex-col border-r border-white/[0.06] bg-[#09090b] px-3 py-6 md:flex">
-        <Link to="/" search={{ tab: "home" }} className="mb-12 flex items-center gap-3 px-3">
+      <aside className="fixed inset-y-0 left-0 z-50 hidden h-screen w-[216px] flex-col overflow-hidden border-r border-white/[0.06] bg-[#09090b] px-3 py-6 md:flex">
+        <Link to="/" search={{ tab: "home" }} className="mb-8 flex shrink-0 items-center gap-3 px-3">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-300/15 bg-violet-300/[0.08] text-xs font-semibold text-violet-200">V</span>
           <span className="text-[13px] font-semibold tracking-[0.19em] text-zinc-100">VAULT<span className="text-violet-300">.</span></span>
         </Link>
-        <nav aria-label="Main navigation" className="flex-1">
+        <nav aria-label="Main navigation" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [scrollbar-width:thin]">
           {navGroup("Workspace", TABS.filter((tab) => tab.group === "Workspace"))}
           {navGroup("Integrations", TABS.filter((tab) => tab.group === "Integrations"))}
           {navGroup("Insights", TABS.filter((tab) => tab.group === "Insights"))}
@@ -94,7 +94,7 @@ export function AppTabs() {
             )}
           </div>
         </nav>
-        <div className="border-t border-white/[0.06] px-3 pt-4">
+        <div className="shrink-0 border-t border-white/[0.06] px-3 pt-4">
           <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-700">Vault dashboard</div>
           <p className="mt-1 text-[11px] text-zinc-600">Script management</p>
         </div>
