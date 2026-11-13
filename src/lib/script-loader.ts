@@ -142,7 +142,17 @@ export function serveLoader(request: Request, scriptId: string) {
     });
   }
 
-  return new Response(buildLoaderLua(scriptId, origin), {
+  // Obfuscate the delivered bootstrap with one compatibility-focused wrapper.
+  // Avoid VM, control-flow flattening, and anti-tamper layers in the loader path.
+  const protectedLoader = obfuscateLua(buildLoaderLua(scriptId, origin), {
+    passes: 1,
+    mode: "wrap",
+    antiTamper: false,
+    flatten: false,
+    vm: false,
+  });
+
+  return new Response(protectedLoader, {
     status: 200,
     headers: { ...DELIVERY_HEADERS, "Content-Type": "text/plain; charset=utf-8" },
   });
