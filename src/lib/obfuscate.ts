@@ -332,7 +332,6 @@ const genJunkTable = (name: string, size: number): string => {
 export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
   const preamble = opts.preamble ?? false;
   const saltName = opts.saltName ?? "__tamperState";
-  const emitWarning = opts.warn ?? true;
 
   const usedP = new Set<number>();
   const nextP = (): number => {
@@ -342,9 +341,9 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     }
   };
 
-  const warnMsg = "getgenv luavail — this script is not to be tampered with enhanced";
+  const warnMsg = "This script is maintained by api-luavail.lovable.app please stop attempting to crack, deobfuscate, or tamper with this script, Thank You, Sincerely, Luavail.";
   const probeStr = "__probe_" + Math.random().toString(36).slice(2, 10);
-  const warnKeyStr = "__tamper_notice_" + Math.random().toString(36).slice(2, 8);
+  const warnKeyStr = "LuavailAntiTamper";
 
   const STRINGS = [
     "debug", "info", "getinfo", "what", "s", "S", "Lua",
@@ -352,7 +351,7 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     "hookfunction", "hookmetamethod", "islclosure", "isexecutorclosure",
     "getrawmetatable", "__namecall", "__index",
     "load", "loadstring", "game", "getfenv",
-    probeStr, "return 42", "nil", "1",
+    probeStr, "return 42", "nil", "1", "warn",
     warnMsg, warnKeyStr,
   ];
   const S = (name: string): number => {
@@ -430,93 +429,6 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     end
   end`);
 
-  if (emitWarning) {
-    checks.push(`function()
-      local __gg = __rg(__env, ${d("getgenv")}) or __rg(__G, ${d("getgenv")})
-      if __ty(__gg) ~= "function" then return end
-      __ta = (__ta + ${P.getgenv}) % __M
-      local __ok, __gv = __pc(__gg)
-      if not __ok or __ty(__gv) ~= "table" then
-        __tb = (__tb + ${P.genvErr}) % __M
-        return
-      end
-      local __wm = ${wmsg}
-      local __wk = ${wkey}
-      local __wok = __pc(function() __gv[__wk] = __wm end)
-      if __wok then __tb = (__tb + ${P.warnSet}) % __M end
-    end`);
-  } else {
-    checks.push(`function()
-      if __rg(__env, ${d("getgenv")}) ~= nil or __rg(__G, ${d("getgenv")}) ~= nil then
-        __ta = (__ta + ${P.getgenv}) % __M
-      end
-    end`);
-  }
-
-  checks.push(`function()
-    if __rg(__env, ${d("getrenv")}) ~= nil or __rg(__G, ${d("getrenv")}) ~= nil then
-      __ta = (__ta + ${P.getrenv}) % __M
-    end
-  end`);
-  checks.push(`function()
-    if __rg(__env, ${d("checkcaller")}) ~= nil or __rg(__G, ${d("checkcaller")}) ~= nil then
-      __tb = (__tb + ${P.checkcaller}) % __M
-    end
-  end`);
-  checks.push(`function()
-    if __rg(__env, ${d("hookfunction")}) ~= nil or __rg(__G, ${d("hookfunction")}) ~= nil then
-      __tb = (__tb + ${P.hookfn}) % __M
-    end
-  end`);
-  checks.push(`function()
-    if __rg(__env, ${d("hookmetamethod")}) ~= nil or __rg(__G, ${d("hookmetamethod")}) ~= nil then
-      __ta = (__ta + ${P.hookmm}) % __M
-    end
-  end`);
-  checks.push(`function()
-    if __rg(__env, ${d("islclosure")}) ~= nil or __rg(__G, ${d("islclosure")}) ~= nil then
-      __tb = (__tb + ${P.islcl}) % __M
-    end
-  end`);
-  checks.push(`function()
-    if __rg(__env, ${d("isexecutorclosure")}) ~= nil or __rg(__G, ${d("isexecutorclosure")}) ~= nil then
-      __ta = (__ta + ${P.isexecc}) % __M
-    end
-  end`);
-
-  checks.push(`function()
-    local __cc = __rg(__env, ${d("checkcaller")}) or __rg(__G, ${d("checkcaller")})
-    if __ty(__cc) ~= "function" then return end
-    local __ok, __r = __pc(__cc)
-    if __ok and __r == false then __ta = (__ta + ${P.ccFalse}) % __M end
-  end`);
-  checks.push(`function()
-    local __il = __rg(__env, ${d("islclosure")}) or __rg(__G, ${d("islclosure")})
-    if __ty(__il) ~= "function" then return end
-    local __ok1, __r1 = __pc(__il, __sbyte)
-    if __ok1 and __r1 == true then __tb = (__tb + ${P.islclC}) % __M end
-    local __ok2, __r2 = __pc(__il, function() end)
-    if __ok2 and __r2 == false then __tb = (__tb + ${P.islclL}) % __M end
-  end`);
-  checks.push(`function()
-    local __iec = __rg(__env, ${d("isexecutorclosure")}) or __rg(__G, ${d("isexecutorclosure")})
-    if __ty(__iec) ~= "function" then return end
-    local __ok, __r = __pc(__iec, function() end)
-    if __ok and __r == true then __tb = (__tb + ${P.ieccTrue}) % __M end
-  end`);
-  checks.push(`function()
-    local __gmm = __rg(__env, ${d("getrawmetatable")}) or __rg(__G, ${d("getrawmetatable")})
-    if __ty(__gmm) ~= "function" then return end
-    __ta = (__ta + ${P.gmm}) % __M
-    local __g = __rg(__env, ${d("game")}) or __rg(__G, ${d("game")})
-    if __g == nil then return end
-    local __ok, __mt = __pc(__gmm, __g)
-    if not __ok or __ty(__mt) ~= "table" then return end
-    local __nc = __rg(__mt, ${d("__namecall")})
-    if __ty(__nc) == "function" and __isLua(__nc) then __tb = (__tb + ${P.namecall}) % __M end
-    local __ix = __rg(__mt, ${d("__index")})
-    if __ty(__ix) == "function" and __isLua(__ix) then __tb = (__tb + ${P.index}) % __M end
-  end`);
   checks.push(`function()
     local __ls = __rg(__env, ${d("loadstring")}) or __rg(__G, ${d("loadstring")})
     if __ty(__ls) ~= "function" then
@@ -612,7 +524,19 @@ do
     end
   end
 end
-return ((__ta % ${maskA}) * 31 + (__tb % ${maskB}) * 17) % __M
+local __result = ((__ta % ${maskA}) * 31 + (__tb % ${maskB}) * 17) % __M
+if __result ~= 0 then
+  local __gg = __rg(__env, ${d("getgenv")}) or __rg(__G, ${d("getgenv")})
+  if __ty(__gg) == "function" then
+    local __ok, __gv = __pc(__gg)
+    if __ok and __ty(__gv) == "table" then
+      __pc(function() __gv[${wkey}] = ${wmsg} end)
+    end
+  end
+  local __wn = __rg(__env, ${d("warn")}) or __rg(__G, ${d("warn")})
+  if __ty(__wn) == "function" then __pc(__wn, ${wmsg}) end
+end
+return __result
 `.trim();
 
   const indented = body.split("\n").map((l) => "  " + l).join("\n");
