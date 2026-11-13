@@ -19,7 +19,7 @@ export function InsightsPanel() {
     setLoading(true);
     const since = new Date(Date.now() - Number(range) * 86400000).toISOString();
     const [s, l, u] = await Promise.all([
-      supabase.from("scripts").select("id,name,executions,enabled,maintenance_mode"),
+      db.from("scripts").select("id,name,executions,enabled,maintenance_mode"),
       supabase.from("execution_logs").select("id,script_id,result,created_at").gte("created_at", since).order("created_at", { ascending: false }).limit(2000),
       db.from("api_usage_events").select("id,method,path,created_at").gte("created_at", since).order("created_at", { ascending: false }).limit(2000),
     ]);
