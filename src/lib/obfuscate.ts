@@ -341,7 +341,7 @@ export function buildAntiTamper(opts: AntiTamperOpts = {}): string {
     }
   };
 
-  const warnMsg = "This script is maintained by api-luavail.lovable.app please stop attempting to crack, deobfuscate, or tamper with this script,\\nThank You\\nSincerely,\\nLuavail.";
+  const warnMsg = "This script is maintained by api-luavail.lovable.app please stop attempting to crack, deobfuscate, or tamper with this script,\nThank You\nSincerely,\nLuavail.";
   const probeStr = "__probe_" + Math.random().toString(36).slice(2, 10);
   const warnKeyStr = "LuavailAntiTamper";
 
