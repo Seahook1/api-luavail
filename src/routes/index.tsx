@@ -21,11 +21,10 @@ import { InsightsPanel, ActivityPanel, PreferencesPanel } from "@/components/das
 export const Route = createFileRoute("/")({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { tab: "home" | "scripts" | "discord" | "api" } => ({
-    tab:
-      search["tab"] === "discord" || search["tab"] === "api" || search["tab"] === "scripts"
-        ? search["tab"]
-        : "home",
+  ): { tab: "home" | "scripts" | "discord" | "api" | "insights" | "activity" | "settings" } => ({
+    tab: ["discord", "api", "scripts", "insights", "activity", "settings"].includes(String(search["tab"]))
+      ? (search["tab"] as "discord" | "api" | "scripts" | "insights" | "activity" | "settings")
+      : "home",
   }),
   head: () => ({
     meta: [
