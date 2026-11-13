@@ -1,7 +1,7 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { LayoutDashboard, Code2, Bot, KeyRound, UserRound, ShieldCheck, ChartNoAxesCombined, ScrollText, Settings2, Activity, ShieldAlert } from "lucide-react";
+import { LayoutDashboard, Code2, Bot, KeyRound, UserRound, ShieldCheck, ChartNoAxesCombined, ScrollText, Settings2, Activity, ShieldAlert, Wrench } from "lucide-react";
 import { useAppSession } from "@/components/session-provider";
 import { getAdminAccess } from "@/lib/admin.functions";
 import { canShowAdminTab } from "@/lib/admin-navigation";
@@ -16,6 +16,7 @@ const TABS = [
   { id: "settings", label: "Preferences", group: "Insights", icon: Settings2 },
   { id: "sessions", label: "Live sessions", group: "Insights", icon: Activity },
   { id: "security", label: "Security alerts", group: "Insights", icon: ShieldAlert },
+  { id: "tools", label: "Platform tools", group: "Workspace", icon: Wrench },
   { id: "keys", label: "Key center", group: "Workspace", icon: KeyRound },
 ] as const;
 
