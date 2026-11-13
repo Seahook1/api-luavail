@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { useServerFn } from "@tanstack/react-start";
-import { registerDiscordCommands, getBotInvite, updateBotProfile } from "@/lib/discord.functions";
+import { registerDiscordCommands, getBotInvite, updateBotProfile, sendScriptWebhookTest } from "@/lib/discord.functions";
 import { createApiKey } from "@/lib/apikeys.functions";
 import { checkpointToken } from "@/lib/getkey-token";
 import { lovable } from "@/integrations/lovable";
@@ -618,6 +618,16 @@ function ScriptPanel({
   onDelete: () => void;
 }) {
   const [source, setSource] = useState(script.source);
+  const testWebhook = useServerFn(sendScriptWebhookTest);
+  const [testingWebhook, setTestingWebhook] = useState(false);
+  const downloadBackup = (content: string, filename: string) => {
+    const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
   const [keys, setKeys] = useState<Key[]>([]);
   const [keyQuery, setKeyQuery] = useState("");
   const [keyStatus, setKeyStatus] = useState<"all" | "active" | "banned" | "expired">("all");
@@ -724,6 +734,16 @@ function ScriptPanel({
     onChange();
   };
   const [hook, setHook] = useState(script.discord_webhook ?? "");
+  const runWebhookTest = async () => {
+    setTestingWebhook(true);
+    try {
+      const result = await testWebhook({ data: { scriptId: script.id } });
+      if (result.ok) toast.success(result.message);
+      else toast.error(result.message);
+    } catch {
+      toast.error("Webhook test failed.");
+    } finally { setTestingWebhook(false); }
+  };
   const saveHook = async () => {
     const v = hook.trim();
     if (v && !/^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(v)) {
@@ -882,9 +902,10 @@ function ScriptPanel({
           className="mt-1 font-mono text-xs"
           placeholder='print("hello")'
         />
-        <Button size="sm" className="mt-2" onClick={save}>
-          Save source
-        </Button>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Button size="sm" onClick={save}>Save source</Button>
+          <Button size="sm" variant="outline" onClick={() => downloadBackup(source, `${script.name.replace(/[^a-z0-9-_]+/gi, "_")}.lua`)}>Download backup</Button>
+        </div>
       </div>
       <div>
         <h3 className="font-bold">Keys</h3>
@@ -1020,6 +1041,7 @@ function ScriptPanel({
             onChange={(e) => setHook(e.target.value)}
           />
           <Button size="sm" onClick={saveHook}>Save</Button>
+          <Button size="sm" variant="outline" disabled={testingWebhook || !hook.trim()} onClick={() => void runWebhookTest()}>{testingWebhook ? "Testing…" : "Send test"}</Button>
         </div>
         <div className="flex flex-wrap gap-4 pt-2 text-xs text-zinc-400">
           <label className="flex items-center gap-2"><input type="checkbox" checked={successAlerts} onChange={(e) => void saveWebhookEvents(e.target.checked, failureAlerts)} /> Successful executions</label>
@@ -1028,7 +1050,7 @@ function ScriptPanel({
       </div>
       <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4">
         <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-semibold text-white">Source versions</h3><p className="text-xs text-zinc-500">Previous saved versions, newest first</p></div><Button size="sm" variant="outline" onClick={loadVersions}>Refresh</Button></div>
-        <div className="space-y-2">{versions.map((v) => <div key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/[0.06] px-3 py-2"><span className="text-xs text-zinc-400">{new Date(v.created_at).toLocaleString()} · {v.source.length.toLocaleString()} chars</span><Button size="sm" variant="ghost" onClick={async () => { if (!confirm("Restore this source version? The current source will be saved as a new version.")) return; const { error } = await supabase.from("scripts").update({ source: v.source }).eq("id", script.id); if (error) toast.error(error.message); else { setSource(v.source); toast.success("Version restored"); loadVersions(); onChange(); } }}>Restore</Button></div>)}{versions.length===0 && <p className="text-xs text-zinc-600">No previous versions yet. Versions are created when you save changed source.</p>}</div>
+        <div className="space-y-2">{versions.map((v) => <div key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/[0.06] px-3 py-2"><span className="text-xs text-zinc-400">{new Date(v.created_at).toLocaleString()} · {v.source.length.toLocaleString()} chars</span><div className="flex gap-1"><Button size="sm" variant="ghost" onClick={() => downloadBackup(v.source, `${script.name.replace(/[^a-z0-9-_]+/gi, "_")}-backup-${new Date(v.created_at).toISOString().replace(/[:.]/g, "-")}.lua`)}>Download</Button><Button size="sm" variant="ghost" onClick={async () => { if (!confirm("Restore this source version? The current source will be saved as a new version.")) return; const { error } = await supabase.from("scripts").update({ source: v.source }).eq("id", script.id); if (error) toast.error(error.message); else { setSource(v.source); toast.success("Version restored"); loadVersions(); onChange(); } }}>Restore</Button></div></div>)}{versions.length===0 && <p className="text-xs text-zinc-600">No previous versions yet. Versions are created when you save changed source.</p>}</div>
       </div>
       {!enabled && (
         <p className="text-sm text-destructive">
