@@ -15,6 +15,7 @@ import { checkpointToken } from "@/lib/getkey-token";
 import { lovable } from "@/integrations/lovable";
 import { HomePanel } from "@/components/home-panel";
 import { LuaFilePicker } from "@/components/lua-file-picker";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export const Route = createFileRoute("/")({
   validateSearch: (
@@ -611,7 +612,7 @@ function ScriptPanel({
       .select("id,key_note,result,executor,roblox_username,roblox_display_name,created_at")
       .eq("script_id", script.id)
       .order("created_at", { ascending: false })
-      .limit(25);
+      .limit(250);
     setLogs(data ?? []);
   };
   const executorSummary = logs.reduce<Record<string, number>>((counts, log) => {
@@ -623,6 +624,18 @@ function ScriptPanel({
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
   const totalLoggedRuns = logs.length;
+  const chartNow = Date.now();
+  const executionChart = Array.from({ length: 12 }, (_, index) => {
+    const hourStart = new Date(chartNow);
+    hourStart.setMinutes(0, 0, 0);
+    hourStart.setHours(hourStart.getHours() - (11 - index));
+    const nextHour = hourStart.getTime() + 60 * 60 * 1000;
+    const count = logs.filter((log) => {
+      const timestamp = new Date(log.created_at).getTime();
+      return timestamp >= hourStart.getTime() && timestamp < nextHour;
+    }).length;
+    return { time: hourStart.toLocaleTimeString([], { hour: "numeric" }), executions: count };
+  });
   const toggle = async () => {
     const { error } = await supabase
       .from("scripts")
@@ -703,7 +716,27 @@ function ScriptPanel({
   useEffect(() => {
     loadKeys();
     loadLogs();
-  }, []);
+
+    const channel = supabase
+      .channel(`execution-logs-${script.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "execution_logs", filter: `script_id=eq.${script.id}` },
+        (payload) => {
+          setLogs((current) => [payload.new as Log, ...current].slice(0, 250));
+        },
+      )
+      .subscribe();
+
+    const refresh = window.setInterval(() => {
+      void loadLogs();
+    }, 15000);
+
+    return () => {
+      window.clearInterval(refresh);
+      void supabase.removeChannel(channel);
+    };
+  }, [script.id]);
 
   const save = async () => {
     const { error } = await supabase.from("scripts").update({ source }).eq("id", script.id);
@@ -931,12 +964,45 @@ function ScriptPanel({
           Disabled: no buyer can run this script right now.
         </p>
       )}
-      <div>
-        <div className="flex items-center justify-between">
-          <h3 className="font-bold">Executions</h3>
-          <Button size="sm" variant="ghost" onClick={loadLogs}>
+      <div className="space-y-4 rounded-xl border border-white/[0.08] bg-[#101014] p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold tracking-wide text-white">Live executions</h3>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-400/[0.07] px-2 py-1 text-[10px] font-medium text-emerald-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> LIVE
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-zinc-500">Execution activity · last 12 hours</p>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-semibold tabular-nums text-white">{logs.filter((log) => Date.now() - new Date(log.created_at).getTime() < 12 * 60 * 60 * 1000).length}</div>
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500">Recent runs</div>
+          </div>
+          <Button size="sm" variant="ghost" className="text-zinc-400 hover:text-white" onClick={loadLogs}>
             Refresh
           </Button>
+        </div>
+        <div className="h-56 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={executionChart} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
+              <defs>
+                <linearGradient id="executionFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#a78bfa" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="time" tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={18} />
+              <YAxis allowDecimals={false} tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background: "#17171c", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#fff", fontSize: 12 }} />
+              <Area type="monotone" dataKey="executions" name="Executions" stroke="#a78bfa" strokeWidth={2} fill="url(#executionFill)" activeDot={{ r: 4, fill: "#c4b5fd", stroke: "#17171c", strokeWidth: 2 }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="flex items-center justify-between border-t border-white/[0.06] pt-3 text-[11px] text-zinc-500">
+          <span>Updates automatically as executions arrive</span>
+          <span>{totalLoggedRuns} loaded events</span>
         </div>
         {totalLoggedRuns > 0 && (
           <div className="mb-3 space-y-2 rounded-md border border-border p-3">
@@ -960,7 +1026,7 @@ function ScriptPanel({
             })}
           </div>
         )}
-        <p className="mb-2 text-xs text-muted-foreground">Player names and executor labels are client-reported and may be inaccurate or spoofed. No IP addresses are displayed here.</p>
+        <p className="mb-2 text-xs text-zinc-500">Player names and executor labels are client-reported and may be inaccurate or spoofed. No IP addresses are displayed here.</p>
         <div className="mt-2 space-y-1 text-xs">
           {logs.length === 0 && <p className="text-muted-foreground">No runs yet.</p>}
           {logs.map((l) => (
@@ -971,7 +1037,7 @@ function ScriptPanel({
               <span className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="min-w-24 text-zinc-200">{l.roblox_display_name || l.roblox_username || "Unknown player"}</span>
                 {l.roblox_username && l.roblox_display_name && <span className="text-zinc-500">@{l.roblox_username}</span>}
-                <span className={l.result === "ok" ? "text-primary" : "text-destructive"}>
+                <span className={l.result === "success" || l.result === "ok" ? "text-emerald-400" : "text-rose-400"}>
                   {l.result}
                 </span>
                 <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
