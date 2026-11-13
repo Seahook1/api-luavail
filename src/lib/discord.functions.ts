@@ -46,3 +46,53 @@ export const updateBotProfile = createServerFn({ method: "POST" })
     if (!res.ok) return { ok: false, message: "Discord said " + res.status + ": " + (await res.text()).slice(0, 300) };
     return { ok: true, message: "Bot profile updated." };
   });
+
+
+export const sendScriptWebhookTest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { scriptId: string }) => data)
+  .handler(async ({ context, data }) => {
+    const { data: script, error } = await context.supabase
+      .from("scripts")
+      .select("id,name,discord_webhook")
+      .eq("id", data.scriptId)
+      .maybeSingle();
+    if (error || !script) return { ok: false, message: "Script not found or access denied." };
+    if (!script.discord_webhook) return { ok: false, message: "Save a Discord webhook URL first." };
+
+    let webhook: URL;
+    try {
+      webhook = new URL(script.discord_webhook);
+    } catch {
+      return { ok: false, message: "The saved webhook URL is invalid." };
+    }
+    if (
+      webhook.protocol !== "https:" ||
+      !["discord.com", "discordapp.com"].includes(webhook.hostname) ||
+      !/^\/api\/webhooks\/[0-9]+\/[A-Za-z0-9._-]+$/.test(webhook.pathname)
+    ) {
+      return { ok: false, message: "Only official Discord webhook URLs are supported." };
+    }
+
+    try {
+      const response = await fetch(webhook, {
+        method: "POST",
+        redirect: "error",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          embeds: [{
+            title: "Webhook test",
+            description: "Your execution alerts are connected and working.",
+            color: 0x8b5cf6,
+            fields: [{ name: "Script", value: script.name.slice(0, 100), inline: true }],
+            footer: { text: "Vault · Webhook diagnostics" },
+            timestamp: new Date().toISOString(),
+          }],
+        }),
+      });
+      if (!response.ok) return { ok: false, message: "Discord returned HTTP " + response.status + "." };
+      return { ok: true, message: "Test message delivered to Discord." };
+    } catch {
+      return { ok: false, message: "Could not reach Discord. Check the webhook URL and try again." };
+    }
+  });
