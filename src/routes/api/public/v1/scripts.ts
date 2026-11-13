@@ -2,9 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { authApiRequest, json, CORS, SCRIPT_COLS } from "@/lib/api-auth";
 
+const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
+
 const Create = z.object({
   name: z.string().trim().min(1).max(100),
-  source: z.string().max(500_000).optional(),
+  source: z.string().max(MAX_SOURCE_BYTES).refine((value) => new TextEncoder().encode(value).byteLength <= MAX_SOURCE_BYTES, "Source must be 10 MB or smaller").optional(),
   keyless: z.boolean().optional(),
 });
 
