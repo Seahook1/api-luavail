@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { hostingAllowed } from "@/lib/moderation";
+import { sendDiscordAlert } from "@/lib/discord-commands";
 
 const RATE_WINDOW_MS = 30_000;
 const MAX_INIT_PER_WINDOW = 5;
@@ -33,6 +34,15 @@ async function handleInit(request: Request): Promise<Response> {
     let executor: string | null = null;
     let robloxUsername: string | null = null;
     let robloxDisplayName: string | null = null;
+    const failWithAlert = async (message: string) => {
+      if (scriptId) {
+        const { data: alertScript } = await (db as any).from("scripts").select("discord_webhook,webhook_failure_enabled").eq("id", scriptId).maybeSingle();
+        if (alertScript?.discord_webhook && alertScript.webhook_failure_enabled !== false) {
+          void sendDiscordAlert(alertScript.discord_webhook, "A script execution attempt was rejected: " + message.slice(0, 300));
+        }
+      }
+      return await failWithAlert(message);
+    };
     if (request.method === "GET") {
       const u = new URL(request.url);
       scriptId = u.searchParams.get("s");
@@ -57,41 +67,41 @@ async function handleInit(request: Request): Promise<Response> {
     const cleanPlayerName = (value: unknown) => (typeof value === "string" ? value : "").replace(/[^\w .-]/g, "").trim().slice(0, 32) || null;
     robloxUsername = cleanPlayerName(robloxUsername);
     robloxDisplayName = cleanPlayerName(robloxDisplayName);
-    if (!scriptId || !UUID.test(scriptId) || !hwid || hwid.length > 200) return fail("Missing script_id or hwid");
+    if (!scriptId || !UUID.test(scriptId) || !hwid || hwid.length > 200) return await failWithAlert("Missing script_id or hwid");
 
-    if (isRateLimited(hwid)) return fail("Rate limit exceeded");
+    if (isRateLimited(hwid)) return await failWithAlert("Rate limit exceeded");
 
     const { data: banned } = await db.from("banned_hwids").select("hwid").eq("hwid", hwid).maybeSingle();
-    if (banned) return fail("HWID is banned");
+    if (banned) return await failWithAlert("HWID is banned");
 
     const { data: script } = await (db as any)
       .from("scripts")
       .select("id, enabled, moderation_disabled, keyless, maintenance_mode")
       .eq("id", scriptId)
       .maybeSingle();
-    if (!script) return fail("Script not found");
-    if (!hostingAllowed(script)) return fail("Script is disabled or moderated");
-    if ((script as typeof script & { maintenance_mode?: boolean }).maintenance_mode) return fail("Script is temporarily in maintenance mode");
+    if (!script) return await failWithAlert("Script not found");
+    if (!hostingAllowed(script)) return await failWithAlert("Script is disabled or moderated");
+    if ((script as typeof script & { maintenance_mode?: boolean }).maintenance_mode) return await failWithAlert("Script is temporarily in maintenance mode");
 
     let keyId: string | null = null;
 
     if (!script.keyless) {
-      if (!licenseKey) return fail("Missing license key");
+      if (!licenseKey) return await failWithAlert("Missing license key");
       const { data: k } = await db
         .from("license_keys")
         .select("id, banned, expires_at, hwid, last_rebind_at, max_concurrent_sessions")
         .eq("script_id", scriptId)
         .eq("key", licenseKey)
         .maybeSingle();
-      if (!k) return fail("Invalid license key");
-      if (k.banned) return fail("License key is banned");
-      if (k.expires_at && new Date(k.expires_at) < new Date()) return fail("License key has expired");
+      if (!k) return await failWithAlert("Invalid license key");
+      if (k.banned) return await failWithAlert("License key is banned");
+      if (k.expires_at && new Date(k.expires_at) < new Date()) return await failWithAlert("License key has expired");
 
       if (!k.hwid) {
         await db.from("license_keys").update({ hwid }).eq("id", k.id);
       } else if (k.hwid !== hwid) {
         if (k.last_rebind_at && Date.now() - new Date(k.last_rebind_at).getTime() < 24 * 3600_000) {
-          return fail("HWID does not match this key (rebind cooldown 24h)");
+          return await failWithAlert("HWID does not match this key (rebind cooldown 24h)");
         }
         await db.from("license_keys").update({ hwid, last_rebind_at: new Date().toISOString() }).eq("id", k.id);
       }
@@ -103,7 +113,7 @@ async function handleInit(request: Request): Promise<Response> {
         .eq("consumed", true)
         .eq("revoked", false)
         .gt("session_expires_at", new Date().toISOString());
-      if ((count ?? 0) >= k.max_concurrent_sessions) return fail("Max concurrent sessions reached");
+      if ((count ?? 0) >= k.max_concurrent_sessions) return await failWithAlert("Max concurrent sessions reached");
       keyId = k.id;
       await db.from("license_keys").update({ last_used_at: new Date().toISOString() }).eq("id", k.id);
     }
@@ -121,7 +131,7 @@ async function handleInit(request: Request): Promise<Response> {
       canary,
       expires_at: new Date(Date.now() + 30_000).toISOString(),
     });
-    if (insErr) return fail("Internal error creating token");
+    if (insErr) return await failWithAlert("Internal error creating token");
 
     // Opportunistic cleanup of long-dead tokens.
     void db.from("execution_tokens").delete().lt("created_at", new Date(Date.now() - 24 * 3600_000).toISOString());
@@ -129,7 +139,7 @@ async function handleInit(request: Request): Promise<Response> {
     return Response.json({ token, canary }, { status: 200 });
   } catch (e) {
     console.error("session/init fatal:", e);
-    return fail("Internal server error");
+    return await failWithAlert("Internal server error");
   }
 }
 
