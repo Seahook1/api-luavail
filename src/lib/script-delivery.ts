@@ -42,10 +42,11 @@ export async function servePayload(request: Request) {
 
     const { data: script } = await db
       .from("scripts")
-      .select("id, source, enabled, moderation_disabled, executions")
+      .select("id, source, enabled, moderation_disabled, executions, maintenance_mode")
       .eq("id", row.script_id)
       .maybeSingle();
     if (!script || !hostingAllowed(script)) return fail("Script is disabled or moderated");
+    if ((script as typeof script & { maintenance_mode?: boolean }).maintenance_mode) return fail("Script is temporarily in maintenance mode");
     if (!script.source) return fail("No payload available");
 
     await db
