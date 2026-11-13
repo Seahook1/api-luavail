@@ -25,16 +25,17 @@ export const Route = createFileRoute("/api/public/heartbeat")({
           // Kill the session when the script is moderated/disabled or the key/HWID gets banned.
           const { data: script } = await db
             .from("scripts")
-            .select("enabled, moderation_disabled")
+            .select("owner_id, enabled, moderation_disabled")
             .eq("id", row.script_id)
             .maybeSingle();
+          const { data: lockdown } = await db.from("platform_settings").select("emergency_lockdown").eq("owner_id", script?.owner_id).maybeSingle();
           const { data: bannedHwid } = await db.from("banned_hwids").select("hwid").eq("hwid", row.hwid).maybeSingle();
           let keyBanned = false;
           if (row.key_id) {
             const { data: k } = await db.from("license_keys").select("banned, expires_at").eq("id", row.key_id).maybeSingle();
             keyBanned = !k || k.banned || (!!k.expires_at && new Date(k.expires_at) < new Date());
           }
-          if (!script || !hostingAllowed(script) || bannedHwid || keyBanned) {
+          if (!script || !hostingAllowed(script) || lockdown?.emergency_lockdown || bannedHwid || keyBanned) {
             await db.from("execution_tokens").update({ revoked: true }).eq("id", row.id);
             return fail("Session revoked or expired");
           }
