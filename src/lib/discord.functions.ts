@@ -90,6 +90,14 @@ export const sendScriptWebhookTest = createServerFn({ method: "POST" })
           }],
         }),
       });
+      const { data: auth } = await context.supabase.auth.getUser();
+      await (context.supabase as any).from("webhook_deliveries").insert({
+        owner_id: context.userId,
+        script_id: script.id,
+        event_type: "webhook_test",
+        status: response.ok ? "success" : "failed",
+        response_code: response.status,
+      });
       if (!response.ok) return { ok: false, message: "Discord returned HTTP " + response.status + "." };
       return { ok: true, message: "Test message delivered to Discord." };
     } catch {
