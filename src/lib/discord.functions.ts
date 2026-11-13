@@ -90,7 +90,6 @@ export const sendScriptWebhookTest = createServerFn({ method: "POST" })
           }],
         }),
       });
-      const { data: auth } = await context.supabase.auth.getUser();
       await (context.supabase as any).from("webhook_deliveries").insert({
         owner_id: context.userId,
         script_id: script.id,
