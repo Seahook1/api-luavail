@@ -19,6 +19,8 @@ export async function authApiRequest(request: Request) {
   const { data } = await db.from("api_keys").select("id,owner_id").eq("key_hash", await hashApiKey(m[1]!)).maybeSingle();
   if (!data) return null;
   await db.from("api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", data.id);
+  // Store API usage metadata only; deliberately never read or store client addresses.
+  await db.from("api_usage_events").insert({ owner_id: data.owner_id, api_key_id: data.id, method: request.method, path: new URL(request.url).pathname });
   return { db, ownerId: data.owner_id };
 }
 
