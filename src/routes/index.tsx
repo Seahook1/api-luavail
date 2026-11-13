@@ -56,6 +56,9 @@ type Script = {
   checkpoints: string[];
   getkey_hours: number;
   discord_webhook: string | null;
+  maintenance_mode?: boolean;
+  webhook_success_enabled?: boolean;
+  webhook_failure_enabled?: boolean;
 };
 type Log = {
   id: string;
