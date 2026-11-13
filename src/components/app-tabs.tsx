@@ -1,7 +1,7 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { LayoutDashboard, Code2, Bot, KeyRound, UserRound, ShieldCheck, ChartNoAxesCombined, ScrollText } from "lucide-react";
+import { LayoutDashboard, Code2, Bot, KeyRound, UserRound, ShieldCheck, ChartNoAxesCombined, ScrollText, Settings2 } from "lucide-react";
 import { useAppSession } from "@/components/session-provider";
 import { getAdminAccess } from "@/lib/admin.functions";
 import { canShowAdminTab } from "@/lib/admin-navigation";
@@ -10,7 +10,7 @@ const TABS = [
   { id: "home", label: "Overview", group: "Workspace", icon: LayoutDashboard },
   { id: "scripts", label: "Scripts", group: "Workspace", icon: Code2 },
   { id: "discord", label: "Discord bot", group: "Integrations", icon: Bot },
-  { id: "api", label: "API keys", group: "Integrations", icon: KeyRound },\n  { id: "insights", label: "Analytics", group: "Insights", icon: ChartNoAxesCombined },\n  { id: "activity", label: "Audit log", group: "Insights", icon: ScrollText },
+  { id: "api", label: "API keys", group: "Integrations", icon: KeyRound },\n  { id: "insights", label: "Analytics", group: "Insights", icon: ChartNoAxesCombined },\n  { id: "activity", label: "Audit log", group: "Insights", icon: ScrollText },\n  { id: "settings", label: "Preferences", group: "Insights", icon: Settings2 },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
