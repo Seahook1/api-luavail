@@ -46,7 +46,7 @@ export function PlatformToolsPanel() {
 
   const setEmergencyLockdown = async () => {
     const next = !lockdown;
-    if (next && !confirm("Emergency lockdown will block new script payload deliveries and revoke active sessions for your scripts. Continue?")) return;
+    if (next && !confirm("Emergency lockdown will block new payload deliveries and terminate active sessions on their next heartbeat. Continue?")) return;
     setBusy(true);
     const { data: auth } = await supabase.auth.getUser();
     if (!auth.user) { setBusy(false); return; }
@@ -97,7 +97,7 @@ export function PlatformToolsPanel() {
   return <section className="mx-auto max-w-4xl space-y-5">
     <div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">Workspace utilities</p><h1 className="mt-1 text-2xl font-semibold text-white">Platform tools</h1><p className="mt-1 text-sm text-zinc-500">Emergency controls, support, API testing and webhook history.</p></div>
     <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-white">Emergency lockdown</h2><p className="mt-1 text-xs text-zinc-500">Blocks new payload deliveries and revokes active sessions for your scripts.</p></div><Button size="sm" variant={lockdown ? "destructive" : "outline"} disabled={busy || loading} onClick={() => void setEmergencyLockdown()}>{lockdown ? "Disable lockdown" : "Enable lockdown"}</Button></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-white">Emergency lockdown</h2><p className="mt-1 text-xs text-zinc-500">Blocks new payload deliveries and terminates active sessions on their next heartbeat.</p></div><Button size="sm" variant={lockdown ? "destructive" : "outline"} disabled={busy || loading} onClick={() => void setEmergencyLockdown()}>{lockdown ? "Disable lockdown" : "Enable lockdown"}</Button></div>
       <p className={lockdown ? "text-xs text-rose-300" : "text-xs text-emerald-300"}>{lockdown ? "Lockdown is ACTIVE" : "Lockdown is inactive"}</p>
     </div>
     <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4 space-y-3">
