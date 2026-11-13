@@ -7,13 +7,15 @@ export const checkKey = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: lic } = await supabaseAdmin
       .from("license_keys")
-      .select("banned, expires_at, script_id, hwid, scripts(name)")
+      .select("id, banned, expires_at, script_id, hwid, last_used_at, max_concurrent_sessions, scripts(name)")
       .eq("key", data.key)
       .maybeSingle();
     if (!lic) return { found: false as const };
     const expired = !!lic.expires_at && new Date(lic.expires_at) < new Date();
     const status = lic.banned ? "banned" : expired ? "expired" : "valid";
     const s = lic.scripts as unknown as { name?: string } | null;
+    const { data: recentActivity } = await supabaseAdmin.from("execution_logs")
+      .select("result,created_at").eq("key_id", lic.id).order("created_at", { ascending: false }).limit(10);
     return {
       found: true as const,
       status,
@@ -21,6 +23,9 @@ export const checkKey = createServerFn({ method: "POST" })
       scriptName: s?.name ?? "Script",
       expiresAt: lic.expires_at as string | null,
       hwidLocked: !!lic.hwid,
+      lastUsedAt: lic.last_used_at as string | null,
+      maxConcurrentSessions: Number(lic.max_concurrent_sessions ?? 1),
+      recentActivity: (recentActivity ?? []).map((event: { result: string; created_at: string }) => ({ result: event.result, createdAt: event.created_at })),
     };
   });
 
