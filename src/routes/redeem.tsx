@@ -102,6 +102,8 @@ function Redeem() {
                 Expires: {res.expiresAt ? new Date(res.expiresAt).toLocaleString() : "Never"}
               </div>
               <div>Device lock: {res.hwidLocked ? "Locked to your device" : "Not used yet"}</div>
+              <div>Last used: {res.lastUsedAt ? new Date(res.lastUsedAt).toLocaleString() : "Not redeemed yet"}</div>
+              <div>Allowed active sessions: {res.maxConcurrentSessions}</div>
             </div>
             {res.status === "valid" && res.hwidLocked && (
               <div className="space-y-1">
@@ -114,6 +116,10 @@ function Redeem() {
             {resetMsg && !res.hwidLocked && (
               <p className="text-xs text-muted-foreground">{resetMsg}</p>
             )}
+            <div className="space-y-2 border-t border-border pt-3">
+              <h3 className="text-sm font-semibold">Recent activity</h3>
+              {res.recentActivity?.length ? res.recentActivity.map((event, index) => <div key={index} className="flex justify-between gap-3 text-xs text-muted-foreground"><span>{event.result}</span><span>{new Date(event.createdAt).toLocaleString()}</span></div>) : <p className="text-xs text-muted-foreground">No execution history yet.</p>}
+            </div>
             {res.status === "valid" ? (
               <>
                 <pre className="bg-muted p-3 rounded text-xs overflow-x-auto whitespace-pre">
