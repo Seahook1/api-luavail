@@ -166,3 +166,58 @@ export function PreferencesPanel() {
     </div>
   </section>;
 }
+
+
+export function SecurityAlertsPanel() {
+  const [events, setEvents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<"all" | "warning" | "critical">("all");
+  const load = async () => {
+    setLoading(true);
+    let query = db.from("security_events")
+      .select("id,script_id,key_id,event_type,severity,message,details,created_at,scripts(name)")
+      .order("created_at", { ascending: false }).limit(200);
+    if (filter !== "all") query = query.eq("severity", filter);
+    const { data, error } = await query;
+    if (error) toast.error("Could not load security alerts. Apply the security alerts migration first.");
+    setEvents(data ?? []);
+    setLoading(false);
+  };
+  useEffect(() => { void load(); }, [filter]);
+  const label = (type: string) => ({
+    failed_key_check: "Failed key checks",
+    device_rebind: "Device change",
+    execution_burst: "Execution burst",
+  }[type] ?? type.replaceAll("_", " "));
+  return <section className="space-y-5">
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">Security center</p><h1 className="mt-1 text-2xl font-semibold text-white">Security alerts</h1><p className="mt-1 text-sm text-zinc-500">Suspicious activity detected across your scripts.</p></div>
+      <div className="flex gap-2">
+        <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)} className="rounded-lg border border-white/10 bg-[#111115] px-3 py-2 text-xs text-zinc-200">
+          <option value="all">All events</option><option value="warning">Warnings</option><option value="critical">Critical</option>
+        </select>
+        <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>Refresh</Button>
+      </div>
+    </div>
+    <div className="grid gap-3 sm:grid-cols-3">
+      <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4"><p className="text-xs text-zinc-500">Events shown</p><p className="mt-2 text-2xl font-semibold text-white">{events.length}</p></div>
+      <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4"><p className="text-xs text-zinc-500">Warnings</p><p className="mt-2 text-2xl font-semibold text-amber-300">{events.filter((event) => event.severity === "warning").length}</p></div>
+      <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4"><p className="text-xs text-zinc-500">Critical</p><p className="mt-2 text-2xl font-semibold text-rose-300">{events.filter((event) => event.severity === "critical").length}</p></div>
+    </div>
+    <div className="space-y-2">
+      {events.map((event) => {
+        const scriptName = (event.scripts as { name?: string } | null)?.name ?? "Deleted script";
+        return <article key={event.id} className="rounded-xl border border-white/[0.07] bg-[#101014] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2"><span className="text-sm font-semibold text-zinc-100">{label(event.event_type)}</span><span className={`rounded-full px-2 py-0.5 text-[10px] uppercase ${event.severity === "critical" ? "bg-rose-400/10 text-rose-300" : event.severity === "warning" ? "bg-amber-400/10 text-amber-300" : "bg-white/[0.06] text-zinc-400"}`}>{event.severity}</span></div>
+            <time className="text-[11px] text-zinc-500">{new Date(event.created_at).toLocaleString()}</time>
+          </div>
+          <p className="mt-2 text-sm text-zinc-300">{event.message}</p>
+          <p className="mt-1 text-xs text-zinc-600">{scriptName}{event.details?.attemptsInWindow ? ` · ${event.details.attemptsInWindow} failed checks in 10 min` : ""}{event.details?.changesIn30Days ? ` · ${event.details.changesIn30Days} device changes in 30 days` : ""}{event.details?.launchesInTwoMinutes ? ` · ${event.details.launchesInTwoMinutes} launches in 2 min` : ""}</p>
+        </article>;
+      })}
+      {!events.length && <div className="rounded-xl border border-dashed border-white/[0.1] p-8 text-center text-sm text-zinc-500">{loading ? "Loading security events…" : "No security events match this filter."}</div>}
+    </div>
+    <p className="text-[11px] text-zinc-600">Detection uses failed key checks, license device-change events and script launch volume. It does not collect IP addresses, network addresses or raw device identifiers. Client-reported signals can be inaccurate.</p>
+  </section>;
+}
