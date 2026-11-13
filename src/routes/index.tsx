@@ -626,7 +626,7 @@ function ScriptPanel({
     link.href = url;
     link.download = filename;
     link.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const [keys, setKeys] = useState<Key[]>([]);
   const [keyQuery, setKeyQuery] = useState("");
