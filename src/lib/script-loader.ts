@@ -145,7 +145,7 @@ export function serveLoader(request: Request, scriptId: string) {
   // Obfuscate the delivered bootstrap with one compatibility-focused wrapper.
   // Avoid VM, control-flow flattening, and anti-tamper layers in the loader path.
   const protectedLoader = obfuscateLua(buildLoaderLua(scriptId, origin), {
-    passes: 1,
+    passes: 2,
     mode: "wrap",
     antiTamper: true,
     flatten: false,
