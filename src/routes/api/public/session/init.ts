@@ -64,7 +64,7 @@ async function handleInit(request: Request): Promise<Response> {
     const { data: banned } = await db.from("banned_hwids").select("hwid").eq("hwid", hwid).maybeSingle();
     if (banned) return fail("HWID is banned");
 
-    const { data: script } = await db
+    const { data: script } = await (db as any)
       .from("scripts")
       .select("id, enabled, moderation_disabled, keyless, maintenance_mode")
       .eq("id", scriptId)
