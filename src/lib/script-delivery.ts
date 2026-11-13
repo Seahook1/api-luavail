@@ -69,7 +69,7 @@ export async function servePayload(request: Request) {
     // Every delivery is freshly obfuscated with new keys/names, so no two payloads match.
     return Response.json(
       {
-        payload: obfuscateLua(script.source, { passes: 1, mode: "wrap", antiTamper: false, flatten: false, vm: false }),
+        payload: obfuscateLua(script.source, { passes: 2, mode: "wrap", antiTamper: false, flatten: false, vm: true }),
         heartbeat_token: heartbeat,
         interval: INTERVAL_SECONDS,
       },
