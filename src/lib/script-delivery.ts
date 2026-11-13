@@ -41,7 +41,7 @@ export async function servePayload(request: Request) {
       .maybeSingle();
     if (!row) return fail("Token expired or already used");
 
-    const { data: script } = await db
+    const { data: script } = await (db as any)
       .from("scripts")
       .select("id, source, enabled, moderation_disabled, executions, maintenance_mode, discord_webhook, webhook_success_enabled")
       .eq("id", row.script_id)
