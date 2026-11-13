@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
-const MAX_BYTES = 5 * 1024 * 1024;
+const MAX_BYTES = 10 * 1024 * 1024;
 
 export function LuaFilePicker({
   onLoaded,
@@ -19,7 +19,7 @@ export function LuaFilePicker({
       return;
     }
     if (file.size > MAX_BYTES) {
-      toast.error("File is larger than 5 MB");
+      toast.error("File is larger than 10 MB");
       return;
     }
     const text = await file.text();
@@ -54,7 +54,7 @@ export function LuaFilePicker({
       <Button type="button" variant="secondary" size="sm" onClick={() => input.current?.click()}>
         Upload .lua file
       </Button>
-      <span>or drop a file here (max 5 MB)</span>
+      <span>or drop a file here (max 10 MB)</span>
     </div>
   );
 }
