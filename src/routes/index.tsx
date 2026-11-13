@@ -1096,9 +1096,13 @@ function ScriptPanel({
           </div>
         )}
         <p className="mb-2 text-xs text-zinc-500">Player names and executor labels are client-reported and may be inaccurate or spoofed. No IP addresses are displayed here.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Input value={logQuery} onChange={(e) => setLogQuery(e.target.value)} placeholder="Filter by player, executor, or key note…" className="max-w-md" />
+          <select value={logRange} onChange={(e) => setLogRange(e.target.value as typeof logRange)} className="rounded-md border border-border bg-background px-3 text-xs"><option value="all">All time</option><option value="1">Last 24 hours</option><option value="7">Last 7 days</option></select>
+        </div>
         <div className="mt-2 space-y-1 text-xs">
-          {logs.length === 0 && <p className="text-muted-foreground">No runs yet.</p>}
-          {logs.map((l) => (
+          {filteredLogs.length === 0 && <p className="text-muted-foreground">No runs match these filters.</p>}
+          {filteredLogs.map((l) => (
             <div
               key={l.id}
               className="flex flex-wrap justify-between gap-2 rounded border border-border px-3 py-2"
