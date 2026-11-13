@@ -66,11 +66,12 @@ async function handleInit(request: Request): Promise<Response> {
 
     const { data: script } = await db
       .from("scripts")
-      .select("id, enabled, moderation_disabled, keyless")
+      .select("id, enabled, moderation_disabled, keyless, maintenance_mode")
       .eq("id", scriptId)
       .maybeSingle();
     if (!script) return fail("Script not found");
     if (!hostingAllowed(script)) return fail("Script is disabled or moderated");
+    if ((script as typeof script & { maintenance_mode?: boolean }).maintenance_mode) return fail("Script is temporarily in maintenance mode");
 
     let keyId: string | null = null;
 
