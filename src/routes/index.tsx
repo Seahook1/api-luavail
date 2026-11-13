@@ -758,6 +758,7 @@ function ScriptPanel({
   useEffect(() => {
     loadKeys();
     loadLogs();
+    loadVersions();
 
     const channel = supabase
       .channel(`execution-logs-${script.id}`)
@@ -785,6 +786,7 @@ function ScriptPanel({
     if (error) toast.error(error.message);
     else {
       toast.success("Saved");
+      loadVersions();
       onChange();
     }
   };
@@ -819,12 +821,13 @@ function ScriptPanel({
 
   return (
     <section className="space-y-6 min-w-0">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold">{script.name}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h2 className="text-xl font-bold">{script.name}</h2><p className="mt-1 text-xs text-zinc-500">{maintenance ? "Maintenance mode is active" : enabled ? "Script is live" : "Script is disabled"}</p></div>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={toggleKeyless}>
             {keyless ? "Require keys" : "Make keyless"}
           </Button>
+          <Button variant={maintenance ? "default" : "secondary"} size="sm" onClick={toggleMaintenance}>{maintenance ? "End maintenance" : "Maintenance"}</Button>
           <Button variant={enabled ? "secondary" : "default"} size="sm" onClick={toggle}>
             {enabled ? "Disable script" : "Enable script"}
           </Button>
@@ -891,8 +894,13 @@ function ScriptPanel({
           />
           <Button onClick={genKey}>Generate key</Button>
         </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Input className="min-w-44 flex-1" placeholder="Search key or note…" value={keyQuery} onChange={(e) => setKeyQuery(e.target.value)} />
+          <select value={keyStatus} onChange={(e) => setKeyStatus(e.target.value as typeof keyStatus)} className="rounded-md border border-border bg-background px-3 text-xs"><option value="all">All keys</option><option value="active">Active</option><option value="banned">Banned</option><option value="expired">Expired</option></select>
+          <Button size="sm" variant="outline" onClick={bulkRevoke} disabled={!filteredKeys.some((k) => !k.banned)}>Ban matching</Button>
+        </div>
         <div className="mt-3 space-y-2">
-          {keys.map((k) => (
+          {filteredKeys.map((k) => (
             <div key={k.id} className="rounded-md border border-border p-3 text-xs space-y-1">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <code className={k.banned ? "line-through text-destructive" : "text-primary"}>
@@ -996,10 +1004,16 @@ function ScriptPanel({
             value={hook}
             onChange={(e) => setHook(e.target.value)}
           />
-          <Button size="sm" onClick={saveHook}>
-            Save
-          </Button>
+          <Button size="sm" onClick={saveHook}>Save</Button>
         </div>
+        <div className="flex flex-wrap gap-4 pt-2 text-xs text-zinc-400">
+          <label className="flex items-center gap-2"><input type="checkbox" checked={successAlerts} onChange={(e) => void saveWebhookEvents(e.target.checked, failureAlerts)} /> Successful executions</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={failureAlerts} onChange={(e) => void saveWebhookEvents(successAlerts, e.target.checked)} /> Failed attempts (when emitted)</label>
+        </div>
+      </div>
+      <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4">
+        <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-semibold text-white">Source versions</h3><p className="text-xs text-zinc-500">Previous saved versions, newest first</p></div><Button size="sm" variant="outline" onClick={loadVersions}>Refresh</Button></div>
+        <div className="space-y-2">{versions.map((v) => <div key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/[0.06] px-3 py-2"><span className="text-xs text-zinc-400">{new Date(v.created_at).toLocaleString()} · {v.source.length.toLocaleString()} chars</span><Button size="sm" variant="ghost" onClick={async () => { if (!confirm("Restore this source version? The current source will be saved as a new version.")) return; const { error } = await supabase.from("scripts").update({ source: v.source }).eq("id", script.id); if (error) toast.error(error.message); else { setSource(v.source); toast.success("Version restored"); loadVersions(); onChange(); } }}>Restore</Button></div>)}{versions.length===0 && <p className="text-xs text-zinc-600">No previous versions yet. Versions are created when you save changed source.</p>}</div>
       </div>
       {!enabled && (
         <p className="text-sm text-destructive">
