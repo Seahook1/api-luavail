@@ -65,7 +65,14 @@ export async function servePayload(request: Request) {
       result: "success",
     });
     if (script.discord_webhook && script.webhook_success_enabled !== false) {
-      void sendDiscordAlert(script.discord_webhook, "A new execution was recorded for " + script.name + ".");
+      const delivery = await sendDiscordAlert(script.discord_webhook, "A new execution was recorded for " + script.name + ".");
+      await db.from("webhook_deliveries").insert({
+        owner_id: script.owner_id,
+        script_id: script.id,
+        event_type: "execution_success",
+        status: delivery?.ok ? "success" : "failed",
+        response_code: delivery?.status || null,
+      });
     }
 
     // Every delivery is freshly obfuscated with new keys/names, so no two payloads match.
