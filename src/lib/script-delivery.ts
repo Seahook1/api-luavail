@@ -2,6 +2,7 @@ import { hostingAllowed } from "@/lib/moderation";
 import { isBrowserNavigation, browserBlockedPage } from "@/lib/browser-page";
 import { obfuscateLua } from "@/lib/obfuscate";
 import { DELIVERY_HEADERS } from "@/lib/delivery-links";
+import { sendDiscordAlert } from "@/lib/discord-commands";
 
 const SESSION_SECONDS = 120;
 const INTERVAL_SECONDS = 30;
@@ -42,7 +43,7 @@ export async function servePayload(request: Request) {
 
     const { data: script } = await db
       .from("scripts")
-      .select("id, source, enabled, moderation_disabled, executions, maintenance_mode")
+      .select("id, source, enabled, moderation_disabled, executions, maintenance_mode, discord_webhook, webhook_success_enabled")
       .eq("id", row.script_id)
       .maybeSingle();
     if (!script || !hostingAllowed(script)) return fail("Script is disabled or moderated");
@@ -61,6 +62,9 @@ export async function servePayload(request: Request) {
       roblox_display_name: row.roblox_display_name,
       result: "success",
     });
+    if (script.discord_webhook && script.webhook_success_enabled !== false) {
+      void sendDiscordAlert(script.discord_webhook, "Script execution recorded for " + script.id + ".");
+    }
 
     // Every delivery is freshly obfuscated with new keys/names, so no two payloads match.
     return Response.json(
