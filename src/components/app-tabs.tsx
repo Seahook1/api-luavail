@@ -76,9 +76,8 @@ export function AppTabs() {
   return (
     <>
       <aside className="fixed inset-y-0 left-0 z-50 hidden h-screen w-[216px] flex-col overflow-hidden border-r border-white/[0.06] bg-[#09090b] px-3 py-6 md:flex">
-        <Link to="/" search={{ tab: "home" }} className="mb-8 flex shrink-0 items-center gap-3 px-3">
-          <img src="/logo.svg" alt="API Luavail" className="h-9 w-9 rounded-lg object-contain" />
-          <span className="text-[13px] font-semibold tracking-[0.15em] text-zinc-100">API LUAVAIL</span>
+        <Link to="/" search={{ tab: "home" }} aria-label="Luavail home" className="mb-8 flex w-full shrink-0 items-center px-2">
+          <img src="/logo.svg" alt="Luavail" className="h-auto w-full max-w-[184px] object-contain object-left" />
         </Link>
         <nav aria-label="Main navigation" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [scrollbar-width:thin]">
           {navGroup("Workspace", TABS.filter((tab) => tab.group === "Workspace"))}
@@ -97,14 +96,15 @@ export function AppTabs() {
           </div>
         </nav>
         <div className="shrink-0 border-t border-white/[0.06] px-3 pt-4">
-          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-700">API Luavail</div>
+          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-700">Luavail</div>
           <p className="mt-1 text-[11px] text-zinc-600">Script management</p>
         </div>
       </aside>
       <nav aria-label="Mobile navigation" className="sticky top-0 z-50 border-b border-white/[0.07] bg-[#09090b]/95 px-4 py-3 backdrop-blur md:hidden">
-        <div className="mb-3 flex items-center gap-2 px-1">
-          <img src="/logo.svg" alt="API Luavail" className="h-8 w-8 rounded-lg object-contain" />
-          <span className="text-xs font-semibold tracking-[0.15em] text-zinc-100">API LUAVAIL</span>
+        <div className="mb-3 flex items-center px-1">
+          <Link to="/" search={{ tab: "home" }} aria-label="Luavail home">
+            <img src="/logo.svg" alt="Luavail" className="h-auto w-[158px] object-contain object-left" />
+          </Link>
         </div>
         <div className="flex gap-1 overflow-x-auto pb-0.5">
           {TABS.map((tab) => (
