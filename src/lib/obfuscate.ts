@@ -1288,7 +1288,7 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   const useVm   = o.vm ?? (mode === "full" || mode === "vm");
 
   const saltName = useAnti
-    ? "IIIOIOIIIIIOIOIOIIOOI"
+    ? `_lv_salt_${rng().toString(36)}`
     : null;
 
   let cur = expandLuaMacros(source, o.macros);
@@ -1323,9 +1323,10 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
 
   if (minify) cur = minifyToSingleLine(cur);
   
-  // setmetatable is intentionally the first executable token in the output.
+  // Keep the single outer callable wrapper inside the named local requested by the user.
   const header = `-- This script is protected by ObsidianVM [api-luavail.lovable.app]\n`;
-  return `return(setmetatable({},{__call=function()return(function()\n${header}${cur}\nend)()end}))()`;
+  const outerName = "IOIIIOIOIOIOIOIIOIIOOI";
+  return `local ${outerName}=(function()return(setmetatable({},{__call=function()return(function()\n${header}${cur}\nend)()end}))()end)() return ${outerName}`;
 }
 
 export type { MiniOp, Const };
