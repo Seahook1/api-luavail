@@ -10,7 +10,6 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { registerDiscordCommands, getBotInvite, updateBotProfile, sendScriptWebhookTest } from "@/lib/discord.functions";
-import { createApiKey } from "@/lib/apikeys.functions";
 import { checkpointToken } from "@/lib/getkey-token";
 import { lovable } from "@/integrations/lovable";
 import { HomePanel } from "@/components/home-panel";
@@ -26,8 +25,8 @@ export const Route = createFileRoute("/")({
   validateSearch: (
     search: Record<string, unknown>,
   ): { tab: "home" | "scripts" | "discord" | "api" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security" | "tools" } => ({
-    tab: ["discord", "api", "scripts", "insights", "activity", "settings", "sessions", "keys", "security", "tools"].includes(String(search["tab"]))
-      ? (search["tab"] as "discord" | "api" | "scripts" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security" | "tools")
+    tab: ["discord", "scripts", "insights", "activity", "settings", "sessions", "keys", "security", "tools"].includes(String(search["tab"]))
+      ? (search["tab"] as "discord" | "scripts" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security" | "tools")
       : "home",
   }),
   head: () => ({
@@ -209,7 +208,6 @@ function Dashboard() {
   return (
     <div className="mx-auto max-w-7xl px-5 py-7 sm:px-8 sm:py-9">
       {tab === "discord" && <DiscordPanel />}
-      {tab === "api" && <ApiPanel />}
       {tab === "insights" && <InsightsPanel />}
       {tab === "activity" && <ActivityPanel />}
       {tab === "settings" && <PreferencesPanel />}
@@ -475,141 +473,6 @@ function KeySystemSetup({ script, onDone }: { script: Script; onDone: () => void
         <Button variant="ghost" onClick={onDone}>
           Skip for now
         </Button>
-      </div>
-    </div>
-  );
-}
-
-type ApiKey = {
-  id: string;
-  name: string;
-  prefix: string;
-  last_used_at: string | null;
-  created_at: string;
-};
-
-function ApiPanel() {
-  const [keys, setKeys] = useState<ApiKey[]>([]);
-  const [name, setName] = useState("");
-  const [fresh, setFresh] = useState<string | null>(null);
-  const create = useServerFn(createApiKey);
-  const load = async () => {
-    const { data } = await supabase
-      .from("api_keys")
-      .select("id,name,prefix,last_used_at,created_at")
-      .order("created_at", { ascending: false });
-    setKeys(data ?? []);
-  };
-  useEffect(() => {
-    load();
-  }, []);
-  const make = async () => {
-    try {
-      const r = await create({ data: { name: name || "My key" } });
-      setFresh(r.key);
-      setName("");
-      load();
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  };
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const k = fresh ?? "vk_YOUR_KEY";
-  return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      {keys.length === 0 && !fresh ? (
-        <div className="rounded-md border border-primary p-6 text-center space-y-3">
-          <h2 className="text-xl font-bold">Do you want to make an API key?</h2>
-          <p className="text-sm text-muted-foreground">
-            An API key lets your own tools, bots or panels create and manage scripts and keys
-            without the dashboard.
-          </p>
-          <div className="flex justify-center gap-2">
-            <Input
-              className="w-56"
-              placeholder="Key name (optional)"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <Button onClick={make}>Yes, make one</Button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex gap-2">
-          <Input
-            placeholder="New key name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <Button onClick={make}>Create API key</Button>
-        </div>
-      )}
-      {fresh && (
-        <div className="rounded-md border border-primary bg-card p-4 space-y-2">
-          <div className="text-sm font-bold">Copy your key now — it won't be shown again.</div>
-          <code className="block break-all text-primary text-xs">{fresh}</code>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => {
-              navigator.clipboard.writeText(fresh);
-              toast.success("Copied");
-            }}
-          >
-            Copy
-          </Button>
-        </div>
-      )}
-      <div className="space-y-2">
-        {keys.map((x) => (
-          <div
-            key={x.id}
-            className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-xs"
-          >
-            <span>
-              <b>{x.name}</b> <code className="text-muted-foreground">{x.prefix}…</code>
-            </span>
-            <span className="flex items-center gap-2 text-muted-foreground">
-              {x.last_used_at ? `used ${new Date(x.last_used_at).toLocaleString()}` : "never used"}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={async () => {
-                  if (confirm("Revoke this key?")) {
-                    await supabase.from("api_keys").delete().eq("id", x.id);
-                    load();
-                  }
-                }}
-              >
-                Revoke
-              </Button>
-            </span>
-          </div>
-        ))}
-      </div>
-      <div className="space-y-2">
-        <h3 className="font-bold">Make a script with your key</h3>
-        <pre className="overflow-x-auto rounded-md border border-border bg-card p-3 text-xs">{`curl -X POST ${origin}/api/public/v1/scripts \\
-  -H "Authorization: Bearer ${k}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"name":"My Script","source":"print(\\"hi\\")"}'`}</pre>
-        <div className="text-xs text-muted-foreground space-y-1">
-          <div>
-            <code>GET /api/public/v1/scripts</code> — list scripts
-          </div>
-          <div>
-            <code>POST /api/public/v1/scripts</code> — create (name, source, keyless) → returns
-            loader
-          </div>
-          <div>
-            <code>GET | PATCH | DELETE /api/public/v1/scripts/:id</code> — read / update (name,
-            source, enabled, keyless) / delete
-          </div>
-          <div>
-            <code>GET | POST /api/public/v1/scripts/:id/keys</code> — list / generate key (note,
-            days)
-          </div>
-        </div>
       </div>
     </div>
   );
