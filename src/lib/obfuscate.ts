@@ -1232,7 +1232,8 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     `end`,
     tail,
   ];
-  return out.filter(Boolean).join("\n");
+  const body = out.filter(Boolean).join("\n");
+  return `return(function()\n${body}\nend)()`;
 }
 
 // ── combined entry ───────────────────────────────────────────────────────
