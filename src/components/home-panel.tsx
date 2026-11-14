@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 const FEATURES = [
@@ -110,7 +111,8 @@ function PlansSection() {
     </section>
   );
 }
-\nexport function HomePanel({ signedIn }: { signedIn: boolean }) {
+
+export function HomePanel({ signedIn }: { signedIn: boolean }) {
   return (
     <div>
       <section className="border-b border-white/[0.08] py-16 text-left sm:py-24">
@@ -136,7 +138,9 @@ function PlansSection() {
         </div>
       </section>
 
-      <PlansSection />\n\n      <section className="grid gap-0 pb-10 sm:grid-cols-2 lg:grid-cols-3">
+      <PlansSection />
+
+      <section className="grid gap-0 pb-10 sm:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map((f) => (
           <div key={f.title} className="border-b border-r border-white/[0.08] bg-transparent p-5 transition-colors hover:bg-white/[0.025]">
             <h3 className="text-sm font-medium text-white">{f.title}</h3>
