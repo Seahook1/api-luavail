@@ -20,7 +20,18 @@ describe("obfuscateLua", () => {
   });
   it("starts generated output with a return function wrapper", () => {
     const out = obfuscateLua('return "wrapper"');
-    expect(out).toContain("return(function()");
+    expect(out.startsWith("return(setmetatable(")).toBe(true);
+  });
+  it("expands custom macros before obfuscation", () => {
+    const out = obfuscateLua('return {{GREETING}}', {
+      macros: { GREETING: '"HELLO_FROM_MACRO"' },
+    });
+    expect(out).not.toContain("{{GREETING}}");
+    expect(execute(out).stdout.trim()).toBe("HELLO_FROM_MACRO");
+  });
+  it("rejects undefined and invalid custom macros", () => {
+    expect(() => obfuscateLua('return {{MISSING}}')).toThrow("Undefined custom macro");
+    expect(() => obfuscateLua('return 1', { macros: { "bad-name": "2" } })).toThrow("Invalid macro name");
   });
   it("executes Unicode source and preserves return values in Lua", () => {
     const result = execute(obfuscateLua('return "secret key é 😀"'));
