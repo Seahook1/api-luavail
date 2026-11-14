@@ -1323,10 +1323,9 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
 
   if (minify) cur = minifyToSingleLine(cur);
   
-  // Keep the single outer callable wrapper inside the named local requested by the user.
+  // Emit the outer callable wrapper directly, without assigning it to a local.
   const header = `-- This script is protected by ObsidianVM [api-luavail.lovable.app]\n`;
-  const outerName = "IOIIIOIOIOIOIOIIOIIOOI";
-  return `local ${outerName}=(function()return(setmetatable({},{__call=function()return(function()\n${header}${cur}\nend)()end}))()end)() return ${outerName}`;
+  return `return(setmetatable({},{__call=function()return(function()\n${header}${cur}\nend)()end}))()`;
 }
 
 export type { MiniOp, Const };
