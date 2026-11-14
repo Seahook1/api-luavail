@@ -81,10 +81,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "API Luavail" },
+      { title: "Zelvmp" },
       { name: "description", content: "Roblox script protection" },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "API Luavail" },
+      { property: "og:title", content: "Zelvmp" },
       { property: "og:description", content: "Roblox script protection" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
