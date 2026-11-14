@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-import { obfuscateLua } from "@/lib/obfuscate";
+import { analyzeLuaCompatibility, obfuscateLua } from "@/lib/obfuscate";
 
 function execute(wrapper: string, prelude = "") {
   const result = spawnSync("lua", ["-"], {
@@ -167,5 +167,24 @@ describe("anti-tamper", () => {
   it("is stable across many random builds", () => {
     for (let i = 0; i < 25; i++)
       expect(execute(obfuscateLua(`print(${i})`, 2)).stdout.trim()).toBe(String(i));
+  });
+});
+
+describe("Lua compatibility analysis", () => {
+  it("marks simple supported expressions as VM-compatible", () => {
+    const report = analyzeLuaCompatibility('local value = 2 + 3\nreturn value');
+    expect(report.vmSupported).toBe(true);
+    expect(report.recommendedMode).toBe("vm");
+  });
+
+  it("recommends wrapper mode for syntax outside the restricted VM subset", () => {
+    const report = analyzeLuaCompatibility('while true do break end');
+    expect(report.vmSupported).toBe(false);
+    expect(report.recommendedMode).toBe("wrap");
+    expect(report.message).toContain("preserved");
+  });
+
+  it("handles empty input without claiming VM support", () => {
+    expect(analyzeLuaCompatibility(" ").vmSupported).toBe(false);
   });
 });
