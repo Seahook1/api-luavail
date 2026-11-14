@@ -1287,9 +1287,6 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   const useWrap = mode !== "cff" && mode !== "vm";
   const useVm   = o.vm ?? (mode === "full" || mode === "vm");
 
-  const saltName = useAnti
-    ? `_lv_salt_${rng().toString(36)}`
-    : null;
 
   let cur = expandLuaMacros(source, o.macros);
   const refsName = `_lvf_${rng().toString(36)}`;
@@ -1310,22 +1307,11 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
     }
   }
 
-  if (useAnti && saltName) {
-    let antiBody = buildAntiTamper({ preamble: false });
-    if (minify) antiBody = minifyLua(antiBody);
-    let wrappedAnti = antiBody;
-    for (let i = 0; i < n; i++) {
-      wrappedAnti = wrapOnce(wrappedAnti, null);
-    }
-    const antiCalls = "()".repeat(n + 1);
-    cur = `local ${saltName} = (function()\n${wrappedAnti}\nend)${antiCalls}\n` + cur;
-  }
-
   if (minify) cur = minifyToSingleLine(cur);
   
-  // Emit the outer callable wrapper directly, without assigning it to a local.
+  // Return the transformed source without an additional outer callable layer.
   const header = `-- This script is protected by ObsidianVM [api-luavail.lovable.app]\n`;
-  return `return(setmetatable({},{__call=function()return(function()\n${header}${cur}\nend)()end}))()`;
+  return header + cur;
 }
 
 export type { MiniOp, Const };
