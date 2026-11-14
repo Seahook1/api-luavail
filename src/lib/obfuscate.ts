@@ -1292,6 +1292,8 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
     : null;
 
   let cur = expandLuaMacros(source, o.macros);
+  const refsName = `_lvf_${rng().toString(36)}`;
+  cur = `local ${refsName}=setmetatable({[71]=buffer and buffer.writeu32,[96]=bit32 and bit32.bnot,[63]=buffer and buffer.create})\\n${cur}`;
 
   if (useCff) cur = flatten(cur);
   if (minify && useWrap) cur = minifyLua(cur);
