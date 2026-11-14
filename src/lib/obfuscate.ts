@@ -1325,7 +1325,7 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   
   // setmetatable is intentionally the first executable token in the output.
   const header = `-- This script is protected by ObsidianVM [api-luavail.lovable.app]\n`;
-  return `return(setmetatable({}, {__call=function() return (function()\n${header}${cur}\nend)() end}))()`;
+  return `return(setmetatable({},{__call=function()return(function()\n${header}${cur}\nend)()end}))()`;
 }
 
 export type { MiniOp, Const };
