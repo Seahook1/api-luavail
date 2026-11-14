@@ -1303,7 +1303,7 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   if (useWrap) {
     for (let i = 0; i < n; i++) {
       const isOutermost = i === n - 1;
-      cur = wrapOnce(cur, isOutermost ? saltName : null);
+      cur = wrapOnce(cur, null);
     }
   }
 
