@@ -1,3 +1,6 @@
+-- Add fields used by single-use delivery tokens and active-session heartbeats.
+-- This migration intentionally does not depend on pg_cron being installed.
+
 ALTER TABLE public.execution_tokens
   ADD COLUMN IF NOT EXISTS heartbeat_token      text,
   ADD COLUMN IF NOT EXISTS canary               text,
@@ -24,16 +27,5 @@ CREATE TABLE IF NOT EXISTS public.banned_hwids (
 );
 ALTER TABLE public.banned_hwids ENABLE ROW LEVEL SECURITY;
 
--- Revoke sessions that stopped heartbeating for 5 min
-SELECT cron.schedule(
-  'revoke-dead-sessions',
-  '*/2 * * * *',
-  $$
-    UPDATE public.execution_tokens
-    SET revoked = true
-    WHERE consumed = true
-      AND revoked = false
-      AND session_expires_at IS NOT NULL
-      AND last_heartbeat_at < now() - interval '5 minutes';
-  $$
-);
+-- Session expiry is enforced by the heartbeat endpoint itself. Avoid making
+-- this migration fail on projects where the optional pg_cron extension is absent.
