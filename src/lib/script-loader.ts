@@ -142,12 +142,13 @@ export function serveLoader(request: Request, scriptId: string) {
     });
   }
 
-  // Obfuscate the delivered bootstrap with one compatibility-focused wrapper.
-  // Avoid VM, control-flow flattening, and anti-tamper layers in the loader path.
+  // Keep the bootstrap lightweight for broad Lua/Luau loader compatibility.
+  // One minification pass and the simple wrapper only; no VM or runtime probes.
   const protectedLoader = obfuscateLua(buildLoaderLua(scriptId, origin), {
-    passes: 2,
+    passes: 1,
     mode: "wrap",
-    antiTamper: true,
+    minify: true,
+    antiTamper: false,
     flatten: false,
     vm: false,
   });
