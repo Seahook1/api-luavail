@@ -1,4 +1,5 @@
-// The CDN handles authorization checks only. Script delivery stays on zelvmp.com.
+// api.zelvmp.com serves loader and Lua payloads; cdn.zelvmp.com handles authorization only.
+export const API_DELIVERY_BASE = "https://api.zelvmp.com";
 export const CDN_LOADER_PATH = "/api/public/cdn/loader/";
 export const CDN_PAYLOAD_PATH = "/api/public/cdn/payload";
 export const KEY_CHECK_BASE = "https://cdn.zelvmp.com";
@@ -9,8 +10,8 @@ export const DELIVERY_HEADERS = {
   "X-Robots-Tag": "noindex, nofollow",
 };
 
-export function loaderUrl(origin: string, scriptId: string) {
-  return `${origin}${CDN_LOADER_PATH}${scriptId}?hop=4`;
+export function loaderUrl(_origin: string, scriptId: string) {
+  return `${API_DELIVERY_BASE}${CDN_LOADER_PATH}${scriptId}?hop=4`;
 }
 
 function isDevelopmentHost(request: Request) {
