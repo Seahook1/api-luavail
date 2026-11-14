@@ -162,9 +162,6 @@ async function handleInit(request: Request): Promise<Response> {
       script_id: scriptId,
       key_id: keyId,
       hwid,
-      executor,
-      roblox_username: robloxUsername,
-      roblox_display_name: robloxDisplayName,
       canary,
       expires_at: new Date(Date.now() + 30_000).toISOString(),
     });
