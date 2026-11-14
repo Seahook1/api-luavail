@@ -27,7 +27,7 @@ describe("Lua minifier", () => {
   });
 
   it("preserves concatenation next to numeric literals", () => {
-    expect(minifyLua('local value = 1 .. "x"')).toBe('local value=1.."x"');
+    expect(minifyLua('local value = 1 .. "x"')).toBe('local value=1 .."x"');
   });
 
   it("throws for unterminated quoted and long-bracket strings", () => {
