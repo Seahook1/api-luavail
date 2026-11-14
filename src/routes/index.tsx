@@ -20,6 +20,7 @@ import { InsightsPanel, ActivityPanel, PreferencesPanel, SecurityAlertsPanel } f
 import { SessionsPanel } from "@/components/sessions-panel";
 import { KeyCenterPanel } from "@/components/key-center-panel";
 import { PlatformToolsPanel } from "@/components/platform-tools-panel";
+import { LuavailIntegrationAssistant } from "@/components/luavail-integration-assistant";
 
 export const Route = createFileRoute("/")({
   validateSearch: (
@@ -909,6 +910,7 @@ function ScriptPanel({
           Copy loader
         </Button>
       </div>
+      <LuavailIntegrationAssistant scriptId={script.id} source={source} loader={loader} hasDiscordWebhook={!!hook.trim()} />
       <div>
         <label className="text-sm text-muted-foreground">
           Protected source (Lua) — encrypted automatically every time it is served
