@@ -1,11 +1,12 @@
 import { obfuscateLua } from "@/lib/obfuscate";
 import { isBrowserNavigation, browserBlockedPage } from "@/lib/browser-page";
-import { CDN_PAYLOAD_PATH, DELIVERY_HEADERS, loaderUrl } from "@/lib/delivery-links";
+import { CDN_PAYLOAD_PATH, DELIVERY_HEADERS, KEY_CHECK_BASE, loaderUrl } from "@/lib/delivery-links";
 
-export function buildLoaderLua(scriptId: string, apiBase: string) {
+export function buildLoaderLua(scriptId: string, keyCheckBase: string, deliveryBase: string) {
   const lua = `
 local SCRIPT_ID = "${scriptId}"
-local API_BASE  = "${apiBase}"
+local KEY_CHECK_BASE = "${keyCheckBase}"
+local DELIVERY_BASE = "${deliveryBase}"
 
 local function getParam(n)
   local ok, v = pcall(function()
@@ -63,7 +64,7 @@ local HttpService = game:GetService("HttpService")
 
 -- ── Step 1: init ────────────────────────────────────────────────
 local okI, initResp = pcall(function()
-  return game:HttpGet(API_BASE .. "/api/public/session/init?s=" .. SCRIPT_ID .. "&k=" .. KEY .. "&h=" .. HWID .. "&e=" .. HttpService:UrlEncode(EXECUTOR) .. "&u=" .. HttpService:UrlEncode(ROBLOX_USERNAME) .. "&d=" .. HttpService:UrlEncode(ROBLOX_DISPLAY_NAME), true)
+  return game:HttpGet(KEY_CHECK_BASE .. "/api/public/session/init?s=" .. SCRIPT_ID .. "&k=" .. KEY .. "&h=" .. HWID .. "&e=" .. HttpService:UrlEncode(EXECUTOR) .. "&u=" .. HttpService:UrlEncode(ROBLOX_USERNAME) .. "&d=" .. HttpService:UrlEncode(ROBLOX_DISPLAY_NAME), true)
 end)
 if not okI or type(initResp) ~= "string" then warn("[Loader] init network error"); return end
 if initResp:sub(1,5) == "--ERR" then warn("[Loader] " .. initResp); return end
@@ -77,7 +78,7 @@ end
 
 -- ── Step 2: fetch ────────────────────────────────────────────────
 local okF, fetchResp = pcall(function()
-  return game:HttpGet(API_BASE .. "${CDN_PAYLOAD_PATH}?token=" .. initData.token, true)
+  return game:HttpGet(DELIVERY_BASE .. "${CDN_PAYLOAD_PATH}?token=" .. initData.token, true)
 end)
 if not okF or type(fetchResp) ~= "string" then warn("[Loader] fetch network error"); return end
 if fetchResp:sub(1,5) == "--ERR" then warn("[Loader] " .. fetchResp); return end
@@ -99,7 +100,7 @@ if not okRun then warn("[Loader] runtime: " .. tostring(runErr)); return end
 
 -- ── Step 4: heartbeat kill-switch ───────────────────────────────
 task.spawn(function()
-  local hbUrl   = API_BASE .. "/api/public/heartbeat?t=" .. fetchData.heartbeat_token
+  local hbUrl   = KEY_CHECK_BASE .. "/api/public/heartbeat?t=" .. fetchData.heartbeat_token
   local interval = tonumber(fetchData.interval) or 30
   while coroutine.status(co) ~= "dead" do
     task.wait(interval)
@@ -144,7 +145,7 @@ export function serveLoader(request: Request, scriptId: string) {
 
   // Keep the bootstrap lightweight for broad Lua/Luau loader compatibility.
   // One minification pass and the simple wrapper only; no VM or runtime probes.
-  const protectedLoader = obfuscateLua(buildLoaderLua(scriptId, origin), {
+  const protectedLoader = obfuscateLua(buildLoaderLua(scriptId, KEY_CHECK_BASE, origin), {
     passes: 1,
     mode: "wrap",
     minify: true,
