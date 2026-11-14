@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { hostingAllowed } from "@/lib/moderation";
+import { requireHost } from "@/lib/delivery-links";
 
 const SESSION_SECONDS = 120;
 const fail = (msg: string) => new Response(`--ERR:${msg}`, { status: 200 });
@@ -8,6 +9,8 @@ export const Route = createFileRoute("/api/public/heartbeat")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        const hostError = requireHost(request, "cdn.zelvmp.com");
+        if (hostError) return hostError;
         try {
           const t = new URL(request.url).searchParams.get("t");
           if (!t || t.length > 128) return fail("Missing token");
