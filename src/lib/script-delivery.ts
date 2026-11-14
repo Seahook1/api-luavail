@@ -75,10 +75,18 @@ export async function servePayload(request: Request) {
       });
     }
 
-    // Every delivery is freshly obfuscated with new keys/names, so no two payloads match.
+    // Use the same lightweight profile for every loader. License enforcement,
+    // single-use tokens and session revocation remain server-side protections.
     return Response.json(
       {
-        payload: obfuscateLua(script.source, { passes: Math.min(3, Math.max(1, Number(script.vm_passes) || 2)), mode: "wrap", antiTamper: false, flatten: false, vm: script.vm_enabled !== false }),
+        payload: obfuscateLua(script.source, {
+          passes: 1,
+          mode: "wrap",
+          minify: true,
+          antiTamper: false,
+          flatten: false,
+          vm: false,
+        }),
         heartbeat_token: heartbeat,
         interval: INTERVAL_SECONDS,
       },
