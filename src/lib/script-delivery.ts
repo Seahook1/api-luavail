@@ -37,9 +37,40 @@ export async function servePayload(request: Request) {
       .eq("consumed", false)
       .eq("revoked", false)
       .gt("expires_at", now.toISOString())
-      .select("id, script_id, key_id, executor, roblox_username, roblox_display_name")
+      .select("id, script_id, key_id, hwid, executor, roblox_username, roblox_display_name")
       .maybeSingle();
     if (!row) return fail("Token expired or already used");
+
+    // Re-check access at delivery time, not only during session initialization.
+    // This closes the gap where a key or device is revoked between init and fetch.
+    const { data: bannedHwid, error: bannedHwidError } = await db
+      .from("banned_hwids")
+      .select("hwid")
+      .eq("hwid", row.hwid)
+      .maybeSingle();
+    if (bannedHwidError || bannedHwid) {
+      await db.from("execution_tokens").update({ revoked: true }).eq("id", row.id);
+      return fail("Device is not authorized");
+    }
+
+    if (row.key_id) {
+      const { data: key, error: keyError } = await db
+        .from("license_keys")
+        .select("id, script_id, banned, expires_at, hwid")
+        .eq("id", row.key_id)
+        .eq("script_id", row.script_id)
+        .maybeSingle();
+      const keyInvalid =
+        !!keyError ||
+        !key ||
+        key.banned ||
+        (!!key.expires_at && new Date(key.expires_at) <= now) ||
+        (!!key.hwid && key.hwid !== row.hwid);
+      if (keyInvalid) {
+        await db.from("execution_tokens").update({ revoked: true }).eq("id", row.id);
+        return fail("License is no longer authorized");
+      }
+    }
 
     const { data: script } = await (db as any)
       .from("scripts")
