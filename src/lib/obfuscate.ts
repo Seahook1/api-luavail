@@ -1255,7 +1255,7 @@ export function expandLuaMacros(source: string, macros: Record<string, string> =
     }
   }
 
-  return source.replace(/\\{\\{([A-Z_][A-Z0-9_]*)\\}\\}/g, (token, name: string) => {
+  return source.replace(/\{\{([A-Z_][A-Z0-9_]*)\}\}/g, (token, name: string) => {
     if (!Object.prototype.hasOwnProperty.call(macros, name)) {
       throw new Error(`Undefined custom macro: ${name}`);
     }
