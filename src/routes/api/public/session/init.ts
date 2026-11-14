@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { hostingAllowed } from "@/lib/moderation";
 import { sendDiscordAlert } from "@/lib/discord-commands";
+import { requireHost } from "@/lib/delivery-links";
 
 const RATE_WINDOW_MS = 30_000;
 const MAX_INIT_PER_WINDOW = 5;
@@ -207,8 +208,8 @@ async function handleInit(request: Request): Promise<Response> {
 export const Route = createFileRoute("/api/public/session/init")({
   server: {
     handlers: {
-      GET: ({ request }) => handleInit(request),
-      POST: ({ request }) => handleInit(request),
+      GET: ({ request }) => requireHost(request, "cdn.zelvmp.com") ?? handleInit(request),
+      POST: ({ request }) => requireHost(request, "cdn.zelvmp.com") ?? handleInit(request),
     },
   },
 });
