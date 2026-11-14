@@ -32,8 +32,12 @@ export const Route = createFileRoute("/api/public/heartbeat")({
           const { data: bannedHwid } = await db.from("banned_hwids").select("hwid").eq("hwid", row.hwid).maybeSingle();
           let keyBanned = false;
           if (row.key_id) {
-            const { data: k } = await db.from("license_keys").select("banned, expires_at").eq("id", row.key_id).maybeSingle();
-            keyBanned = !k || k.banned || (!!k.expires_at && new Date(k.expires_at) < new Date());
+            const { data: k } = await db.from("license_keys").select("banned, expires_at, hwid").eq("id", row.key_id).maybeSingle();
+            keyBanned =
+              !k ||
+              k.banned ||
+              (!!k.expires_at && new Date(k.expires_at) < new Date()) ||
+              (!!k.hwid && k.hwid !== row.hwid);
           }
           if (!script || !hostingAllowed(script) || lockdown?.emergency_lockdown || bannedHwid || keyBanned) {
             await db.from("execution_tokens").update({ revoked: true }).eq("id", row.id);
