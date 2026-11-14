@@ -37,7 +37,7 @@ export async function servePayload(request: Request) {
       .eq("consumed", false)
       .eq("revoked", false)
       .gt("expires_at", now.toISOString())
-      .select("id, script_id, key_id, hwid, executor, roblox_username, roblox_display_name")
+      .select("id, script_id, key_id, hwid")
       .maybeSingle();
     if (!row) return fail("Token expired or already used");
 
@@ -90,9 +90,6 @@ export async function servePayload(request: Request) {
     await db.from("execution_logs").insert({
       script_id: script.id,
       key_id: row.key_id,
-      executor: row.executor ?? "Unknown",
-      roblox_username: row.roblox_username,
-      roblox_display_name: row.roblox_display_name,
       result: "success",
     });
     if (script.discord_webhook && script.webhook_success_enabled !== false) {
