@@ -11,7 +11,7 @@ export function InsightsPanel() {
   const [range, setRange] = useState<Range>("7");
   const [prefs, setPrefs] = useState<DashboardPrefs>(defaultPrefs);
   useEffect(() => { try { const saved = localStorage.getItem(PREF_KEY); if (saved) { const next = { ...defaultPrefs, ...JSON.parse(saved) }; setPrefs(next); setRange(next.range); } } catch { /* use defaults */ } }, []);
-  const accentColor = prefs.accent === "blue" ? "#67e8f9" : prefs.accent === "green" ? "#6ee7b7" : "#a78bfa";
+  const accentColor = prefs.accent === "blue" ? "#67e8f9" : prefs.accent === "green" ? "#6ee7b7" : "#60a5fa";
   const [scripts, setScripts] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [usage, setUsage] = useState<any[]>([]);
@@ -90,7 +90,7 @@ export function InsightsPanel() {
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
-              <defs><linearGradient id="globalExecFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#a78bfa" stopOpacity={0.28}/><stop offset="95%" stopColor="#a78bfa" stopOpacity={0}/></linearGradient></defs>
+              <defs><linearGradient id="globalExecFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity={0.28}/><stop offset="95%" stopColor="#60a5fa" stopOpacity={0}/></linearGradient></defs>
               <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false}/>
               <XAxis dataKey="day" tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false}/>
               <YAxis allowDecimals={false} tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false}/>
@@ -132,9 +132,9 @@ export function ActivityPanel() {
 }
 
 
-type DashboardPrefs = { showStats: boolean; showChart: boolean; showStatus: boolean; range: "7" | "30"; accent: "violet" | "blue" | "green" };
+type DashboardPrefs = { showStats: boolean; showChart: boolean; showStatus: boolean; range: "7" | "30"; accent: "blue" | "green" };
 const PREF_KEY = "vault-dashboard-preferences";
-const defaultPrefs: DashboardPrefs = { showStats: true, showChart: true, showStatus: true, range: "7", accent: "violet" };
+const defaultPrefs: DashboardPrefs = { showStats: true, showChart: true, showStatus: true, range: "7", accent: "blue" };
 
 export function PreferencesPanel() {
   const [prefs, setPrefs] = useState<DashboardPrefs>(defaultPrefs);
@@ -161,7 +161,7 @@ export function PreferencesPanel() {
     </div>
     <div className="rounded-xl border border-white/[0.07] bg-[#101014] p-4 space-y-3">
       <h2 className="text-sm font-semibold text-white">Chart accent</h2>
-      <div className="flex flex-wrap gap-2">{(["violet","blue","green"] as const).map((accent) => <Button key={accent} size="sm" variant={prefs.accent===accent ? "default" : "outline"} onClick={() => save({ ...prefs, accent })}>{accent[0]!.toUpperCase()+accent.slice(1)}</Button>)}</div>
+      <div className="flex flex-wrap gap-2">{(["blue","green"] as const).map((accent) => <Button key={accent} size="sm" variant={prefs.accent===accent ? "default" : "outline"} onClick={() => save({ ...prefs, accent })}>{accent[0]!.toUpperCase()+accent.slice(1)}</Button>)}</div>
       <p className="text-[11px] text-zinc-600">Preferences are stored in this browser and do not affect other dashboard users.</p>
     </div>
   </section>;
