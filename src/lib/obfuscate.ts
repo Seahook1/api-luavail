@@ -1233,10 +1233,35 @@ function wrapOnce(source: string, saltRef: string | null = null): string {
     tail,
   ];
   const body = out.filter(Boolean).join("\n");
-  return `return(function()\n${body}\nend)()`;
+  return `return(setmetatable({}, {__call=function() return (function()\n${body}\nend)() end}))()`;
 }
 
 // ── combined entry ───────────────────────────────────────────────────────
+
+/**
+ * Expands explicit {{NAME}} compile-time macros before obfuscation.
+ * Values are Lua source fragments; only use definitions you control.
+ */
+export function expandLuaMacros(source: string, macros: Record<string, string> = {}): string {
+  const entries = Object.entries(macros);
+  if (entries.length > 100) throw new Error("A maximum of 100 custom macros is allowed.");
+
+  for (const [name, value] of entries) {
+    if (!/^[A-Z_][A-Z0-9_]{0,63}$/.test(name)) {
+      throw new Error(`Invalid macro name "${name}". Use A-Z, 0-9 and underscores.`);
+    }
+    if (typeof value !== "string" || value.length > 16384) {
+      throw new Error(`Macro "${name}" must be a string no longer than 16 KB.`);
+    }
+  }
+
+  return source.replace(/\\{\\{([A-Z_][A-Z0-9_]*)\\}\\}/g, (token, name: string) => {
+    if (!Object.prototype.hasOwnProperty.call(macros, name)) {
+      throw new Error(`Undefined custom macro: ${name}`);
+    }
+    return macros[name]!;
+  });
+}
 
 export interface ObfuscateOpts {
   passes?: number;
@@ -1245,6 +1270,8 @@ export interface ObfuscateOpts {
   minify?: boolean;
   vm?: boolean;
   mode?: "full" | "wrap" | "cff" | "vm" | "none";
+  /** Compile-time replacements for explicit {{NAME}} placeholders. */
+  macros?: Record<string, string>;
 }
 
 export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}): string {
@@ -1264,7 +1291,7 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
     ? "IIIOIOIIIIIOIOIOIIOOI"
     : null;
 
-  let cur = source;
+  let cur = expandLuaMacros(source, o.macros);
 
   if (useCff) cur = flatten(cur);
   if (minify && useWrap) cur = minifyLua(cur);
@@ -1294,9 +1321,9 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
 
   if (minify) cur = minifyToSingleLine(cur);
   
-  // Prepend the protected-by comment at the very top
+  // setmetatable is intentionally the first executable token in the output.
   const header = `-- This script is protected by ObsidianVM [api-luavail.lovable.app]\n`;
-  return header + cur;
+  return `return(setmetatable({}, {__call=function() return (function()\n${header}${cur}\nend)() end}))()`;
 }
 
 export type { MiniOp, Const };
