@@ -142,7 +142,6 @@ export function minifyLua(source: string, singleLine = true): string {
 
   let output = "";
   for (const token of tokens) {
-    const previous = tokens[tokens.indexOf(token) - 1] ?? "";
     if (needsSeparator(output, token)) output += " ";
     output += token;
   }
@@ -248,4 +247,3 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   return header + "return(function(...)\n" + transformed + "\nend)(...)";
 }
 
-export type { };
