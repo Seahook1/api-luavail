@@ -32,12 +32,12 @@ export const Route = createFileRoute("/")({
   }),
   head: () => ({
     meta: [
-      { title: "API Luavail — Roblox Script Protection & Key System" },
+      { title: "Zelvmp — Roblox Script Protection & Key System" },
       {
         name: "description",
         content: "Host Roblox scripts behind license keys with HWID locking, expiry and bans.",
       },
-      { property: "og:title", content: "API Luavail — Roblox Script Protection" },
+      { property: "og:title", content: "Zelvmp — Roblox Script Protection" },
       {
         property: "og:description",
         content: "License keys, HWID lock and protected script delivery.",
@@ -146,7 +146,7 @@ function Auth() {
     <main className="mx-auto flex min-h-[75vh] max-w-md items-center px-6 py-14">
       <div className="w-full rounded-2xl border border-white/[0.1] bg-[#0b0b0b] p-7 shadow-[0_24px_90px_rgba(0,0,0,0.25)] sm:p-9">
         <div className="mb-7">
-          <img src="/logo.svg" alt="Luavail" className="mb-5 h-auto w-full max-w-[360px] object-contain object-left" />
+          <img src="/logo.svg" alt="Zelvmp" className="mb-5 h-auto w-full max-w-[360px] object-contain object-left" />
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Protect your scripts.</h1>
           <p className="mt-2 text-sm leading-6 text-slate-400">
             License keys, device locking and protected script delivery in one place.
