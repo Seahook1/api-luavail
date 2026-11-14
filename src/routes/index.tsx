@@ -643,7 +643,7 @@ function ScriptPanel({
   const [days, setDays] = useState("");
   const [note, setNote] = useState("");
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const loader = `${keyless ? "" : 'script_key = "PUT_KEY_HERE"\n'}loadstring(game:HttpGet("${origin}/api/public/cdn/loader/${script.id}"))()`;
+  const loader = `${keyless ? "" : 'script_key = "PUT_KEY_HERE"\n'}loadstring(game:HttpGet("https://api.zelvmp.com/api/public/cdn/loader/${script.id}?hop=4"))()`;
 
   const loadVersions = async () => {
     const { data, error } = await dashboardDb.from("script_versions").select("id,source,created_at").eq("script_id", script.id).order("created_at", { ascending: false }).limit(30);
