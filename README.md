@@ -1,10 +1,12 @@
-# Api Luavail
+# Zelvmp
 
 Make the @connector:discord:"Discord" bit have a panel and fix it make the website have a tab where it ask if you want to make an api key, make the api key be used to make a script panel
 
 This project was built with [Lovable](https://lovable.dev).
 
-**Live app**: https://api-luavail.lovable.app
+**Planned website domain**: https://zelvmp.com
+
+**Planned API domain**: https://api.zelvmp.com
 
 ## Build with Lovable
 
