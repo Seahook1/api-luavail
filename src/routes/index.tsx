@@ -24,7 +24,7 @@ import { LuavailIntegrationAssistant } from "@/components/luavail-integration-as
 export const Route = createFileRoute("/")({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { tab: "home" | "scripts" | "discord" | "api" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security" | "tools" } => ({
+  ): { tab: "home" | "scripts" | "discord" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security" | "tools" } => ({
     tab: ["discord", "scripts", "insights", "activity", "settings", "sessions", "keys", "security", "tools"].includes(String(search["tab"]))
       ? (search["tab"] as "discord" | "scripts" | "insights" | "activity" | "settings" | "sessions" | "keys" | "security" | "tools")
       : "home",
