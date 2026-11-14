@@ -46,7 +46,7 @@ export function AppTabs() {
   const linkClass = (selected: boolean) =>
     `group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-colors ${
       selected
-        ? "bg-violet-400/[0.09] text-white before:absolute before:inset-y-2 before:left-0 before:w-[2px] before:rounded-full before:bg-violet-300"
+        ? "bg-blue-400/[0.09] text-white before:absolute before:inset-y-2 before:left-0 before:w-[2px] before:rounded-full before:bg-blue-300"
         : "text-zinc-500 hover:bg-white/[0.035] hover:text-zinc-200"
     }`;
 
@@ -64,7 +64,7 @@ export function AppTabs() {
               aria-current={active === tab.id ? "page" : undefined}
               className={linkClass(active === tab.id)}
             >
-              <Icon size={15} strokeWidth={1.8} className={active === tab.id ? "text-violet-200" : "text-zinc-600 group-hover:text-zinc-300"} />
+              <Icon size={15} strokeWidth={1.8} className={active === tab.id ? "text-blue-200" : "text-zinc-600 group-hover:text-zinc-300"} />
               {tab.label}
             </Link>
           );
@@ -108,12 +108,12 @@ export function AppTabs() {
         </div>
         <div className="flex gap-1 overflow-x-auto pb-0.5">
           {TABS.map((tab) => (
-            <Link key={tab.id} to="/" search={{ tab: tab.id }} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium transition-colors ${active === tab.id ? "bg-violet-300/[0.1] text-violet-100" : "text-zinc-500 hover:text-zinc-200"}`}>
+            <Link key={tab.id} to="/" search={{ tab: tab.id }} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium transition-colors ${active === tab.id ? "bg-blue-300/[0.1] text-blue-100" : "text-zinc-500 hover:text-zinc-200"}`}>
               {tab.label}
             </Link>
           ))}
-          <Link to="/redeem" className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium ${active === "buyer" ? "bg-violet-300/[0.1] text-violet-100" : "text-zinc-500"}`}>Buyer portal</Link>
-          {showAdmin && <Link to="/admin" className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium ${active === "admin" ? "bg-violet-300/[0.1] text-violet-100" : "text-zinc-500"}`}>Admin</Link>}
+          <Link to="/redeem" className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium ${active === "buyer" ? "bg-blue-300/[0.1] text-blue-100" : "text-zinc-500"}`}>Buyer portal</Link>
+          {showAdmin && <Link to="/admin" className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium ${active === "admin" ? "bg-blue-300/[0.1] text-blue-100" : "text-zinc-500"}`}>Admin</Link>}
         </div>
       </nav>
     </>
