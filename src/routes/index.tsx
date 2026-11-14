@@ -145,8 +145,7 @@ function Auth() {
     <main className="mx-auto flex min-h-[75vh] max-w-md items-center px-6 py-14">
       <div className="w-full rounded-2xl border border-white/[0.1] bg-[#0b0b0b] p-7 shadow-[0_24px_90px_rgba(0,0,0,0.25)] sm:p-9">
         <div className="mb-7">
-          <img src="/logo.svg" alt="API Luavail — Script Hosting" className="mb-5 h-auto w-full max-w-[280px] object-contain object-left" />
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-400">API Luavail access</p>
+          <img src="/logo.svg" alt="Luavail" className="mb-5 h-auto w-full max-w-[360px] object-contain object-left" />
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Protect your scripts.</h1>
           <p className="mt-2 text-sm leading-6 text-slate-400">
             License keys, device locking and protected script delivery in one place.
