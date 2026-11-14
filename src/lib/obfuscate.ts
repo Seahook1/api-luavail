@@ -52,7 +52,7 @@ function readQuoted(source: string, index: number): number {
 function readNumber(source: string, index: number): number {
   const rest = source.slice(index);
   const match =
-    /^(?:0[xX][\da-fA-F]+(?:\.[\da-fA-F]*)?(?:[pP][+-]?\d+)?|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/.exec(rest);
+    /^(?:0[xX][\da-fA-F]+(?:\.(?!\.)[\da-fA-F]*)?(?:[pP][+-]?\d+)?|(?:\d+(?:\.(?!\.)\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/.exec(rest);
   return index + (match?.[0].length ?? 1);
 }
 
