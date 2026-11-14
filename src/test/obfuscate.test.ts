@@ -18,6 +18,10 @@ describe("obfuscateLua", () => {
     expect(out).not.toContain("secret");
     expect(out).not.toContain("sensitiveVariable");
   });
+  it("starts generated output with a return function wrapper", () => {
+    const out = obfuscateLua('return "wrapper"');
+    expect(out).toContain("return(function()");
+  });
   it("executes Unicode source and preserves return values in Lua", () => {
     const result = execute(obfuscateLua('return "secret key é 😀"'));
     expect(result.status).toBe(0);
