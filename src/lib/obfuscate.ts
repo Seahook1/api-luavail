@@ -901,6 +901,44 @@ function compileVm(src: string): { ops: MiniOp[]; consts: Const[] } | null {
   return { ops, consts };
 }
 
+export interface LuaCompatibilityReport {
+  /** True only when the current restricted VM compiler accepts the whole source. */
+  vmSupported: boolean;
+  /** False means the normal wrapper path should be used instead of VM compilation. */
+  recommendedMode: "vm" | "wrap";
+  message: string;
+}
+
+/**
+ * Reports whether the restricted VM compiler can represent the complete source.
+ * This is deliberately conservative: unsupported syntax should use the normal
+ * wrapper path rather than being partially translated.
+ */
+export function analyzeLuaCompatibility(source: string): LuaCompatibilityReport {
+  if (!source.trim()) {
+    return {
+      vmSupported: false,
+      recommendedMode: "wrap",
+      message: "The source is empty; use the standard wrapper mode.",
+    };
+  }
+
+  const compiled = compileVm(source);
+  if (!compiled) {
+    return {
+      vmSupported: false,
+      recommendedMode: "wrap",
+      message: "This source uses syntax outside Luavail's restricted VM subset. It will be preserved through the standard wrapper path.",
+    };
+  }
+
+  return {
+    vmSupported: true,
+    recommendedMode: "vm",
+    message: "The complete source fits the currently supported VM subset.",
+  };
+}
+
 // ── RC4 + silent fail wrapper, salt-aware, setmetatable exit ─────────────
 
 function wrapOnce(source: string, saltRef: string | null = null): string {
