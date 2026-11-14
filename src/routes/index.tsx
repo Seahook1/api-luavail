@@ -243,7 +243,7 @@ function Dashboard() {
                 <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Your scripts</span>
                 <span className="text-[10px] tabular-nums text-zinc-600">{scripts.length}</span>
               </div>
-              <Button className="w-full bg-violet-300 text-black hover:bg-violet-200" onClick={() => setCreating(true)}>
+              <Button className="w-full bg-blue-300 text-black hover:bg-blue-200" onClick={() => setCreating(true)}>
                 + New script
               </Button>
               <div className="space-y-1">
@@ -251,7 +251,7 @@ function Dashboard() {
                   <button
                     key={s.id}
                     onClick={() => setSel(s)}
-                    className={`w-full rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${sel?.id === s.id ? "border-violet-300/20 bg-violet-300/[0.08] text-white" : "border-transparent text-zinc-400 hover:border-white/[0.06] hover:bg-white/[0.035] hover:text-zinc-100"}`}
+                    className={`w-full rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${sel?.id === s.id ? "border-blue-300/20 bg-blue-300/[0.08] text-white" : "border-transparent text-zinc-400 hover:border-white/[0.06] hover:bg-white/[0.035] hover:text-zinc-100"}`}
                   >
                     {s.name}
                     <span className="block text-xs text-zinc-600">{s.executions} runs</span>
@@ -1104,15 +1104,15 @@ function ScriptPanel({
             <AreaChart data={executionChart} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
               <defs>
                 <linearGradient id="executionFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#a78bfa" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#60a5fa" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
               <XAxis dataKey="time" tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={18} />
               <YAxis allowDecimals={false} tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={{ background: "#17171c", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#fff", fontSize: 12 }} />
-              <Area type="monotone" dataKey="executions" name="Executions" stroke="#a78bfa" strokeWidth={2} fill="url(#executionFill)" activeDot={{ r: 4, fill: "#c4b5fd", stroke: "#17171c", strokeWidth: 2 }} />
+              <Area type="monotone" dataKey="executions" name="Executions" stroke="#60a5fa" strokeWidth={2} fill="url(#executionFill)" activeDot={{ r: 4, fill: "#93c5fd", stroke: "#17171c", strokeWidth: 2 }} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
