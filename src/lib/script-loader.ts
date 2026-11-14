@@ -1,6 +1,6 @@
 import { obfuscateLua } from "@/lib/obfuscate";
 import { isBrowserNavigation, browserBlockedPage } from "@/lib/browser-page";
-import { CDN_PAYLOAD_PATH, DELIVERY_HEADERS, KEY_CHECK_BASE, loaderUrl } from "@/lib/delivery-links";
+import { API_DELIVERY_BASE, CDN_PAYLOAD_PATH, DELIVERY_HEADERS, KEY_CHECK_BASE, loaderUrl } from "@/lib/delivery-links";
 
 export function buildLoaderLua(scriptId: string, keyCheckBase: string, deliveryBase: string) {
   const lua = `
@@ -125,7 +125,7 @@ export function serveLoader(request: Request, scriptId: string) {
     return new Response("--ERR:Script not found", { status: 200, headers: DELIVERY_HEADERS });
   }
   const url = new URL(request.url);
-  const origin = url.origin;
+  const origin = API_DELIVERY_BASE;
   if (isBrowserNavigation(request)) return browserBlockedPage(loaderUrl(origin, scriptId));
 
   // Add four same-origin redirect hops before serving the loader.
@@ -145,7 +145,7 @@ export function serveLoader(request: Request, scriptId: string) {
 
   // Keep the bootstrap lightweight for broad Lua/Luau loader compatibility.
   // One minification pass and the simple wrapper only; no VM or runtime probes.
-  const protectedLoader = obfuscateLua(buildLoaderLua(scriptId, KEY_CHECK_BASE, origin), {
+  const protectedLoader = obfuscateLua(buildLoaderLua(scriptId, KEY_CHECK_BASE, API_DELIVERY_BASE), {
     passes: 1,
     mode: "wrap",
     minify: true,
