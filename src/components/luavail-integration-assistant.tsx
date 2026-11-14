@@ -12,8 +12,8 @@ export function LuavailIntegrationAssistant({ scriptId, source, loader, hasDisco
   const [analyzed, setAnalyzed] = useState(false);
   const findings = useMemo(() => {
     const hasLuavailLoader = source.includes("/api/public/cdn/loader/") || source.includes(scriptId);
-    const hasWebhookSecret = /https?:\\/\\/(?:discord(?:app)?\\.com)\\/api\\/webhooks\\//i.test(source);
-    const hasHttpCalls = /HttpGet|RequestAsync|http_request|request\\s*\\(/i.test(source);
+    const hasWebhookSecret = /https?:\/\/(?:discord(?:app)?\.com)\/api\/webhooks\//i.test(source);
+    const hasHttpCalls = /HttpGet|RequestAsync|http_request|request\s*\(/i.test(source);
     return { hasLuavailLoader, hasWebhookSecret, hasHttpCalls };
   }, [source, scriptId]);
 
