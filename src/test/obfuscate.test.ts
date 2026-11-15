@@ -50,7 +50,8 @@ describe("Lua macros", () => {
 describe("obfuscateLua", () => {
   it("returns a compatibility wrapper and minifies source", () => {
     const output = obfuscateLua('local value = "hello" -- comment\nreturn value');
-    expect(output.startsWith("-- Protected by Luavail")).toBe(true);
+    expect(output.startsWith("local IOIIIOIOIOIOIOIIOIIOOI=")).toBe(true);
+    expect(output).toContain("-- Protected by Zelvmp");
     expect(output).toContain("return(function(...)");
     expect(output).toContain('local value="hello"');
     expect(output).not.toContain("comment");
@@ -64,7 +65,7 @@ describe("obfuscateLua", () => {
   it("supports the legacy numeric passes argument without generating broken layers", () => {
     const output = obfuscateLua('return "ok"', 4);
     expect(output).toContain('return "ok"');
-    expect(output.match(/return\(function/g)).toHaveLength(1);
+    expect(output.match(/return\(function/g)).toHaveLength(4);
   });
 
   it("supports macro expansion through the main API", () => {
