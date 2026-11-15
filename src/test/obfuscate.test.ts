@@ -48,10 +48,10 @@ describe("Lua macros", () => {
 });
 
 describe("obfuscateLua", () => {
-  it("returns a compatibility wrapper and minifies source", () => {
+  it("minifies source without adding a named outer callable wrapper", () => {
     const output = obfuscateLua('local value = "hello" -- comment\nreturn value');
-    expect(output.startsWith("local IOIIIOIOIOIOIOIIOIIOOI=")).toBe(true);
-    expect(output).toContain("-- Protected by Zelvmp");
+    expect(output.startsWith("-- Protected by Zelvmp")).toBe(true);
+    expect(output).not.toContain("local IOIIIOIOIOIOIOIIOIIOOI=");
     expect(output).toContain("return(function(...)");
     expect(output).toContain('local value="hello"');
     expect(output).not.toContain("comment");
