@@ -241,18 +241,18 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
   const expanded = expandLuaMacros(source, options.macros);
   const minified = options.minify === false ? expanded : minifyLua(expanded);
   const passCount = Math.max(1, Math.min(4, Math.floor(options.passes ?? 1)));
-  const header = "-- Protected by Zelvmp | compatibility mode\\n";
+  const header = "-- Protected by Zelvmp | compatibility mode\n";
 
   // Nested function boundaries add lightweight source wrapping while keeping
   // execution in ordinary Lua/Luau syntax. No runtime probes or environment hooks.
   let body = minified;
   for (let i = 0; i < passCount; i++) {
-    body = "return(function(...)\\n" + body + "\\nend)(...)";
+    body = "return(function(...)\n" + body + "\nend)(...)";
   }
 
   // Restore the named outer callable wrapper used by the previous Zelvmp build.
   const outerName = "IOIIIOIOIOIOIOIIOIIOOI";
-  return "local " + outerName + "=(function() return function(...)\\n" +
-    header + body + "\\nend end)(); return " + outerName + "(...)";
+  return "local " + outerName + "=(function() return function(...)\n" +
+    header + body + "\nend end)(); return " + outerName + "(...)";
 }
 
