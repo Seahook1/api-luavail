@@ -250,9 +250,7 @@ export function obfuscateLua(source: string, opts: ObfuscateOpts | number = {}):
     body = "return(function(...)\n" + body + "\nend)(...)";
   }
 
-  // Restore the named outer callable wrapper used by the previous Zelvmp build.
-  const outerName = "IOIIIOIOIOIOIOIIOIIOOI";
-  return "local " + outerName + "=(function() return function(...)\n" +
-    header + body + "\nend end)(); return " + outerName + "(...)";
+  // Keep the generated source free of a named outer callable wrapper.
+  return header + body;
 }
 
